@@ -33,7 +33,155 @@ NEET and JEE preparation across participating institutions.
 
 ---
 """)
+# ================================
+# SME Allocation Dashboard (inline)
+# ================================
+import io
+import pandas as pd
+import streamlit as st
 
+st.divider()
+st.header("🧑‍🏫 SME Allocation Dashboard")
+
+# ---------- 1) Load bilingual file ----------
+up = st.file_uploader("Upload bilingual QB file (.xlsx or .csv)", type=["xlsx", "csv"])
+df = None
+read_err = None
+if up is not None:
+    try:
+        if up.name.lower().endswith(".csv"):
+            df = pd.read_csv(up)
+        else:
+            try:
+                df = pd.read_excel(up, engine="openpyxl")
+            except Exception:
+                # fallback if openpyxl missing on cloud
+                df = pd.read_excel(up)
+        st.success(f"Loaded **{up.name}** with **{len(df)}** rows and **{len(df.columns)}** columns.")
+        with st.expander("Preview first 30 rows", expanded=False):
+            st.dataframe(df.head(30), use_container_width=True)
+    except Exception as e:
+        read_err = str(e)
+        st.error(f"Could not read file: {e}\nIf this is an Excel file, add **openpyxl>=3.1** to requirements.txt.")
+
+# ---------- 2) Column mapping (subject/unit/chapter) ----------
+if df is not None and not df.empty:
+    st.subheader("Select identifiers")
+    # naive guesses
+    guess = lambda keys: next((c for c in df.columns if c.lower() in keys), None)
+    col_subject = st.selectbox("Subject column", options=["(none)"] + list(df.columns),
+                               index=(["(none)"] + list(df.columns)).index(guess({"subject","sub"})) if guess({"subject","sub"}) in df.columns else 0)
+    col_unit    = st.selectbox("Unit column", options=["(none)"] + list(df.columns),
+                               index=(["(none)"] + list(df.columns)).index(guess({"unit","unit_no","unitno"})) if guess({"unit","unit_no","unitno"}) in df.columns else 0)
+    col_chap    = st.selectbox("Chapter column", options=["(none)"] + list(df.columns),
+                               index=(["(none)"] + list(df.columns)).index(guess({"chapter","chap","chapter_name"})) if guess({"chapter","chap","chapter_name"}) in df.columns else 0)
+
+    # filters (optional)
+    left, mid, right = st.columns(3)
+    with left:
+        subj_val = st.selectbox("Subject", sorted(df[col_subject].dropna().unique()) if col_subject != "(none)" else ["(all)"])
+    with mid:
+        unit_val = st.selectbox("Unit", sorted(df[col_unit].dropna().unique()) if col_unit != "(none)" else ["(all)"])
+    with right:
+        chap_val = st.selectbox("Chapter", sorted(df[col_chap].dropna().unique()) if col_chap != "(none)" else ["(all)"])
+
+    # apply filters
+    mask = pd.Series([True] * len(df))
+    if col_subject != "(none)" and subj_val != "(all)":
+        mask &= df[col_subject] == subj_val
+    if col_unit != "(none)" and unit_val != "(all)":
+        mask &= df[col_unit] == unit_val
+    if col_chap != "(none)" and chap_val != "(all)":
+        mask &= df[col_chap] == chap_val
+    work_df = df.loc[mask].reset_index(drop=True)
+    st.info(f"Working set: **{len(work_df)}** rows selected.")
+
+    # ---------- 3) SME list ----------
+    st.subheader("SMEs")
+    n = st.number_input("Number of SMEs", min_value=1, max_value=20, value=3, step=1)
+    sme_cols = st.columns(3)
+    smes = []
+    for i in range(n):
+        with sme_cols[i % 3]:
+            name = st.text_input(f"SME {i+1} Name", key=f"sme_name_inline_{i}", value=f"SME {i+1}")
+            email = st.text_input(f"SME {i+1} Email", key=f"sme_email_inline_{i}", value=f"sme{i+1}@example.com")
+        smes.append((name.strip(), email.strip()))
+
+    # ---------- 4) Allocation ----------
+    st.subheader("Allocate rows")
+    auto = st.checkbox("Auto-allocate equally", value=True)
+    alloc_rows = []
+    if auto:
+        total = len(work_df)
+        q, r = divmod(total, n)
+        start = 1
+        for i in range(n):
+            share = q + (1 if i < r else 0)
+            end = start + share - 1 if share > 0 else 0
+            alloc_rows.append({"SME": smes[i][0], "Email": smes[i][1],
+                               "StartRow": start if share > 0 else 0,
+                               "EndRow": end if share > 0 else 0})
+            start = end + 1
+    else:
+        # manual template
+        for i in range(n):
+            alloc_rows.append({"SME": smes[i][0], "Email": smes[i][1],
+                               "StartRow": 0, "EndRow": 0})
+
+    alloc_df = pd.DataFrame(alloc_rows)
+    st.caption("Edit Start/End rows if needed (1-indexed, inclusive).")
+    edited = st.data_editor(
+        alloc_df,
+        key="alloc_editor_inline",
+        use_container_width=True,
+        column_config={
+            "StartRow": st.column_config.NumberColumn(min_value=0, step=1),
+            "EndRow": st.column_config.NumberColumn(min_value=0, step=1),
+        }
+    )
+    # derived & validation
+    edited["AssignedCount"] = (edited["EndRow"] - edited["StartRow"] + 1).clip(lower=0)
+    total_assigned = int(edited["AssignedCount"].sum())
+    unalloc = max(0, len(work_df) - total_assigned)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total rows (filtered)", len(work_df))
+    c2.metric("Allocated", total_assigned)
+    c3.metric("Unallocated", unalloc)
+
+    # Simple overlap check
+    trouble = []
+    intervals = []
+    for _, r in edited.iterrows():
+        s, e = int(r.StartRow), int(r.EndRow)
+        if s == 0 and e == 0:
+            continue
+        for (us, ue) in intervals:
+            if not (e < us or s > ue):
+                trouble.append(f"Overlap: [{s}, {e}] with [{us}, {ue}]")
+        intervals.append((s, e))
+    if trouble:
+        for t in trouble:
+            st.warning(t)
+    elif len(work_df) > 0 and total_assigned != len(work_df):
+        st.info("Coverage warning: allocation does not match filtered row count.")
+    else:
+        st.success("✅ Allocation looks consistent.")
+
+    # ---------- 5) Export ----------
+    st.subheader("Export")
+    # Attach context columns to export (subject/unit/chapter values if chosen)
+    meta = {
+        "Subject": subj_val if col_subject != "(none)" and subj_val != "(all)" else "",
+        "Unit": unit_val if col_unit != "(none)" and unit_val != "(all)" else "",
+        "Chapter": chap_val if col_chap != "(none)" and chap_val != "(all)" else "",
+        "SourceFile": up.name if up is not None else "",
+        "TotalFilteredRows": len(work_df)
+    }
+    out = edited.assign(**meta)
+    csv_bytes = out.to_csv(index=False).encode("utf-8-sig")
+    st.download_button("⬇️ Download Allocation CSV", data=csv_bytes,
+                       file_name="sme_allocation.csv", mime="text/csv")
 from __future__ import annotations
 import io
 import zipfile
