@@ -1,8 +1,31 @@
-# app.py — make-a-mark (SME Allocation • offline, one-file)
-# Requirements (exact):
-#   streamlit==1.38.0
-#   pandas==2.2.2
-#   openpyxl==3.1.2
+# =========================
+# Make-A-Mark Streamlit App
+# =========================
+
+import streamlit as st
+
+st.set_page_config(
+    page_title="Make-A-Mark Academy",
+    page_icon="🎓",
+    layout="wide"
+)
+
+# Introductory block — displayed before the main dashboard
+st.markdown("""
+# 🎓 **Make-A-Mark Academy**
+### Mission Aspire | Bilingual NEET & JEE Program
+
+Welcome to the **Admin & Content Processing Dashboard**.  
+This platform enables centralized monitoring and bilingual content management for
+NEET and JEE preparation across participating institutions.
+
+**Key Modules:**
+- 🧑‍🏫 **SME Allocation Dashboard** – Assign, track, and manage content contributors.  
+- 📘 **Question Bank Processor** – Generate bilingual (English–Tamil) datasets.  
+- 🧾 **Reports Panel** – Export SME work summaries and progress metrics.  
+
+---
+""")
 
 from __future__ import annotations
 import io
