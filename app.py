@@ -22,8 +22,13 @@ NEET and JEE preparation across participating institutions.
 
 **Key Modules:**
 - 🧑‍🏫 **SME Allocation Dashboard** – Assign, track, and manage content contributors.  
+  *ஆசிரியர்கள் ஒதுக்கீட்டு பலகை*  
+
 - 📘 **Question Bank Processor** – Generate bilingual (English–Tamil) datasets.  
+  *தமிழ் மொழி / கேள்விகளின் தொகுப்பு செயலி*  
+
 - 🧾 **Reports Panel** – Export SME work summaries and progress metrics.  
+  *அறிக்கைகள் & முன்னேற்றக் கண்காணிப்பு பலகை*    
 
 ---
 """)
