@@ -14,7 +14,7 @@ st.set_page_config(
 st.markdown("""
 # 🎓 **Make-A-Mark Academy**
 ### Mission Aspire | Bilingual NEET & JEE Program
-hst.caption("**மேக்-அ-மார்க் அகாடமி – தாய் மொழி கல்வித் தளம் (ஆங்கிலம்–தமிழ்)**")
+st.caption("**மேக்-அ-மார்க் அகாடமி – தாய் மொழி கல்வித் தளம் (ஆங்கிலம்–தமிழ்)**")
 
 Welcome to the **Admin & Content Processing Dashboard**.  
 This platform enables centralized monitoring and bilingual content management for
