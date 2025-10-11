@@ -1,9 +1,8 @@
 # pages/03_Email_QC_Panel.py
-# SME compact editor with 3-button center bar, tight options, answer on right,
-# and a right-side sliding Vocabulary panel triggered from left "Go" box.
+# SME compact editor: 6 rows, centered title, minimal gaps,
+# Go button on the LEFT of Vocabulary, Answer on RIGHT, ~45vh height.
 
-import io
-import re
+import io, re
 import pandas as pd
 import streamlit as st
 
@@ -14,53 +13,46 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ================= CSS (compact & slide panel) =================
-st.markdown(
-    """
+# ================= CSS (compact & layout control) =================
+st.markdown("""
 <style>
 /* Hide sidebar & top chrome for SME view */
 [data-testid="stSidebar"]{display:none;}
 header, footer, .stAppToolbar, [data-testid="collapsedControl"] {visibility:hidden;height:0;}
-/* Compact paddings */
-main .block-container {padding-top:12px; padding-bottom:8px;}
+/* Compact paddings + remove bottom empties */
+main .block-container {padding-top:10px; padding-bottom:0;}
+section[data-testid="stSidebarContent"]{padding-top:0 !important}
 
-/* Panel cards */
+/* Cards for reference panels */
 .box{border:1px solid #d9d9d9;border-radius:12px;padding:10px 12px;margin:8px 0}
 .box.en{background:#eaf2ff;border-color:#9cc4ff}
 .box.ta{background:#eaf7ec;border-color:#8ed39a}
 .label{display:inline-block;background:#eef1f3;padding:2px 8px;border-radius:6px;font-size:.9rem}
 
-/* Inputs compact */
+/* Hide labels of inputs */
 div[data-testid="stTextInput"]>div>label,
 div[data-testid="stTextArea"]>div>label {display:none !important;}
-div[data-testid="stTextInput"], div[data-testid="stTextArea"] {margin-bottom:6px;}
+/* Tighten input blocks */
+div[data-testid="stTextInput"], div[data-testid="stTextArea"] {margin-bottom:4px;}
 input, textarea {font-size:16px;}
 
-/* Option rows: minimal gaps */
-.optrow {margin-top:4px; margin-bottom:0;}
-.optrow .stColumn {padding-right:6px !important; padding-left:6px !important;}
-/* Answer on right: keep box edge visible */
+/* Option rows: smallest safe gaps */
+.optrow .stColumn {padding-left:4px !important; padding-right:4px !important;}
+.optrow {margin-top:2px; margin-bottom:2px;}
+
+/* Answer box slight emphasis */
 .answrap > div > div {border:1px solid #5b5b5b !important; border-radius:8px !important;}
 
-/* 3-button center bar */
-.btrow {margin-top:8px;}
-.btrow .stColumn {padding:0 6px !important;}
+/* 3-button center bar (Row 6) */
+.btrow .stColumn {padding-left:6px !important; padding-right:6px !important;}
+.btrow {margin-top:6px; margin-bottom:0;}
 
-/* Right slide panel */
-#vocabPanel {
-  position: fixed; top: 0; right: -52vw; width: 50vw; height: 100vh;
-  background: #111827; color:#e5e7eb; border-left: 2px solid #3b82f6;
-  box-shadow: -8px 0 24px rgba(0,0,0,.25);
-  z-index: 9999; transition: right .28s ease-in-out; padding:14px 16px 20px 16px;
-}
-#vocabPanel.show { right: 0; }
-#vocabPanel h3{margin-top:6px;margin-bottom:8px}
-#vocabPanel small{opacity:.8}
-.vocab-close{display:inline-block;padding:6px 10px;border:1px solid #6b7280;border-radius:8px}
+/* Keep edit console around ~45% of viewport height */
+#smeWrap {max-height:45vh;}
+/* reduce extra vertical spacing made by Streamlit containers */
+#smeWrap .block-container, #smeWrap [data-testid="stVerticalBlock"]{padding-bottom:0;margin-bottom:0;}
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
 # ================= required columns =================
 REQ_COLS = [
@@ -71,16 +63,16 @@ REQ_COLS = [
 ]
 
 # ================= helpers =================
-def _txt(v): 
+def _txt(v):
     if pd.isna(v): return ""
     return str(v).replace("\r\n","\n").strip()
 
 def _split_opts(v):
-    t = _txt(v)
+    t=_txt(v)
     if not t: return ["","","",""]
-    parts = re.split(r"\s*(?:\r?\n|\n|\||[•;:])\s*", t)
-    parts = [p for p in parts if p]
-    while len(parts) < 4: parts.append("")
+    parts=re.split(r"\s*(?:\r?\n|\n|\||[•;:])\s*", t)
+    parts=[p for p in parts if p]
+    while len(parts)<4: parts.append("")
     return parts[:4]
 
 def _join_opts(a,b,c,d):
@@ -91,11 +83,11 @@ def _join_opts(a,b,c,d):
 
 def build_ta_text(q,a,b,c,d,ans,exp):
     out=[]
-    if _txt(q):  out.append(f"கேள்வி: {q}")
+    if _txt(q):   out.append(f"கேள்வி: {q}")
     ops=_join_opts(a,b,c,d)
-    if ops:      out.append(f"விருப்பங்கள் (A–D): {ops}")
-    if _txt(ans):out.append(f"பதில்: {ans}")
-    if _txt(exp):out.append(f"விளக்கம்: {exp}")
+    if ops:       out.append(f"விருப்பங்கள் (A–D): {ops}")
+    if _txt(ans): out.append(f"பதில்: {ans}")
+    if _txt(exp): out.append(f"விளக்கம்: {exp}")
     return "\n\n".join(out)
 
 def _clean_drive(url:str)->str:
@@ -137,7 +129,7 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     out=pd.DataFrame()
     for k,src in cmap.items():
         if src is None:
-            if k=="QC_TA": out[k]=""; continue
+            if k=="QC_TA": out[k] = ""; continue
             raise RuntimeError(f"Missing columns in the file: {k}")
         out[k]=df[src]
     return out.reset_index(drop=True)
@@ -147,12 +139,12 @@ def apply_subset(df: pd.DataFrame) -> pd.DataFrame:
     ids = qp.get("ids", [])
     rows = qp.get("rows", [])
     if ids:
-        vals=[x for x in re.split(r"[, \s]+", ids[0].strip()) if x]
+        vals=[x for x in re.split(r"[,\\s]+", ids[0].strip()) if x]
         return df[df["ID"].astype(str).isin(vals)].reset_index(drop=True)
     if rows:
-        m=re.match(r"^\s*(\d+)\s*-\s*(\d+)\s*$", rows[0])
+        m=re.match(r"^\\s*(\\d+)\\s*-\\s*(\\d+)\\s*$", rows[0])
         if m:
-            a,b=int(m.group(1)),int(m.group(2))
+            a,b=int(m.group(1)), int(m.group(2))
             a=min(a,b); b=max(a,b)
             return df.iloc[a-1:b].reset_index(drop=True)
     return df
@@ -165,7 +157,7 @@ for k,v in [
 ]:
     if k not in ss: ss[k]=v
 
-# Deep-link auto file load
+# Deep-link autoload
 auto_file = st.query_params.get("file", [])
 if auto_file and ss.qc_work.empty:
     try:
@@ -178,15 +170,13 @@ if auto_file and ss.qc_work.empty:
     except Exception as e:
         st.error(str(e))
 
-# Show loader only if empty
+# Loader only if empty
 if ss.qc_work.empty:
     st.markdown("### 📝 SME QC Panel")
     st.info("Paste the CSV/XLSX link sent by Admin, or upload the file.")
     c1,c2,c3 = st.columns((4,2,1))
-    with c1:
-        upl = st.file_uploader("Upload file (CSV/XLSX)", type=["csv","xlsx"])
-    with c2:
-        ss.link_in = st.text_input("…or paste link (CSV/XLSX/Drive)", value=ss.link_in)
+    with c1: upl = st.file_uploader("Upload file (CSV/XLSX)", type=["csv","xlsx"])
+    with c2: ss.link_in = st.text_input("…or paste link (CSV/XLSX/Drive)", value=ss.link_in)
     with c3:
         if st.button("Load", use_container_width=True):
             try:
@@ -204,22 +194,21 @@ if ss.qc_work.empty:
                 st.error(str(e))
     st.stop()
 
-# ================= top status =================
+# ================= top status (kept minimal; full header will be done next pass) =================
 row = ss.qc_work.iloc[ss.qc_idx]
 rid = row["ID"]
 
 h1,h2,h3 = st.columns((2,4,2))
-with h1:
-    st.markdown("## 📝 SME QC Panel")
+with h1: st.markdown("## 📝 SME QC Panel")
 with h2:
     st.caption(f"English ⇄ Tamil · Row {ss.qc_idx+1}/{len(ss.qc_work)} · ID: {rid}")
     st.progress((ss.qc_idx+1)/max(1,len(ss.qc_work)))
 with h3:
-    prev_c, next_c = st.columns(2)
-    with prev_c:
+    cprev, cnext = st.columns(2)
+    with cprev:
         if st.button("◀ Prev", use_container_width=True, disabled=ss.qc_idx<=0):
             ss.qc_idx -= 1; st.rerun()
-    with next_c:
+    with cnext:
         if st.button("Next ▶", use_container_width=True, disabled=ss.qc_idx>=len(ss.qc_work)-1):
             ss.qc_idx += 1; st.rerun()
 
@@ -242,27 +231,28 @@ ta_q,ta_op,ta_ans,ta_exp = [row[c] for c in (
 view_block("English Version / ஆங்கிலம்", en_q,en_op,en_ans,en_exp, "en")
 view_block("Tamil Original / தமிழ் மூலப் பதிப்பு", ta_q,ta_op,ta_ans,ta_exp, "ta")
 
-# ================= SME Edit Console =================
-st.subheader("SME Edit Console / ஆசிரியர் திருத்தம்")
+# ================= SME Edit Console (SIX ROWS) =================
+st.markdown(
+    "<div style='text-align:center; font-weight:600; font-size:20px;'>SME Edit Console / ஆசிரியர் திருத்தம்</div>",
+    unsafe_allow_html=True
+)
+st.markdown("<div id='smeWrap'>", unsafe_allow_html=True)
 
 A,B,C,D = _split_opts(ta_op)
 rk = f"{ss.qc_idx}"
 for k,v in [
     (f"q_{rk}", _txt(ta_q)),
-    (f"a_{rk}", _txt(A)),
-    (f"b_{rk}", _txt(B)),
-    (f"c_{rk}", _txt(C)),
-    (f"d_{rk}", _txt(D)),
-    (f"ans_{rk}", _txt(ta_ans)),
-    (f"exp_{rk}", _txt(ta_exp)),
+    (f"a_{rk}", _txt(A)), (f"b_{rk}", _txt(B)),
+    (f"c_{rk}", _txt(C)), (f"d_{rk}", _txt(D)),
+    (f"ans_{rk}", _txt(ta_ans)), (f"exp_{rk}", _txt(ta_exp)),
 ]:
     if k not in ss: ss[k]=v
 
-# Question (tight)
-q = st.text_area(" ", value=ss[f"q_{rk}"], key=f"q_in_{rk}", height=72,
+# Row 1: Question (tight)
+q = st.text_area(" ", value=ss[f"q_{rk}"], key=f"q_in_{rk}", height=68,
                  label_visibility="collapsed", placeholder="கேள்வி / Question (TA)")
 
-# Row 1: A | B
+# Row 2: A | B (ultra-tight)
 st.markdown("<div class='optrow'>", unsafe_allow_html=True)
 c1,c2 = st.columns(2)
 with c1:
@@ -273,7 +263,7 @@ with c2:
                       label_visibility="collapsed", placeholder="B")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Row 2: C | D
+# Row 3: C | D (ultra-tight)
 st.markdown("<div class='optrow'>", unsafe_allow_html=True)
 c3,c4 = st.columns(2)
 with c3:
@@ -284,18 +274,21 @@ with c4:
                       label_visibility="collapsed", placeholder="D")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Row 3: Left = Vocabulary trigger, Right = Answer
+# Row 4: LEFT => Go + Vocabulary input  |  RIGHT => Answer
 lc, rc = st.columns((1,1))
 with lc:
     st.caption("Groceries / Vocabulary")
-    vv = st.text_input(" ", value=ss.get("vocab_query",""), key=f"vocab_in_{rk}",
-                       label_visibility="collapsed", placeholder="Type word & Go")
-    lv, rv = st.columns((3,1))
-    with rv:
+    # Go button on the LEFT; input to its right
+    gL, gR = st.columns((1,5))
+    with gL:
         if st.button("Go", key=f"vocab_go_{rk}", use_container_width=True):
-            ss.vocab_query = vv
+            ss.vocab_query = ss.get(f"vocab_{rk}", "")
             ss.show_vocab = True
             st.rerun()
+    with gR:
+        ss[f"vocab_{rk}"] = st.text_input(" ", value=ss.get(f"vocab_{rk}",""),
+                                          label_visibility="collapsed",
+                                          placeholder="Type word")
 with rc:
     st.caption("பதில் / Answer")
     st.markdown("<div class='answrap'>", unsafe_allow_html=True)
@@ -303,54 +296,51 @@ with rc:
                         label_visibility="collapsed", placeholder="Answer")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# Explanation (taller)
-exp = st.text_area(" ", value=ss[f"exp_{rk}"], key=f"exp_in_{rk}", height=200,
-                   label_visibility="collapsed", placeholder="விளக்கம் / Explanation")
+# Row 5: Explanation (taller but still compact)
+exp = st.text_area(" ", value=ss[f"exp_{rk}"], key=f"exp_in_{rk}",
+                   height=168, label_visibility="collapsed",
+                   placeholder="விளக்கம் / Explanation")
 
 def _save_current():
     merged = build_ta_text(q,a,b,c,d,ans,exp)
     ss.qc_work.at[ss.qc_idx,"QC_TA"] = merged
 
-# ================= Centered 3-button row =================
-L, C, R = st.columns((1,1,1), gap="small")
-with L:
+# Row 6: Buttons centered
+bL, bC, bR = st.columns((1,1,1), gap="small")
+with bL:
     if st.button("💾 Save", use_container_width=True):
-        _save_current()
-        st.toast("Saved this row")
-with C:
+        _save_current(); st.toast("Saved this row")
+with bC:
     if st.button("✅ Mark Complete", type="primary", use_container_width=True):
-        _save_current()
-        st.toast("Marked complete for this row")
-with R:
+        _save_current(); st.toast("Marked complete")
+with bR:
     if st.button("💾➡️ Save & Next", use_container_width=True,
                  disabled=ss.qc_idx>=len(ss.qc_work)-1):
         _save_current(); ss.qc_idx += 1; st.rerun()
 
-# ================= Right slide Vocabulary panel =================
+st.markdown("</div>", unsafe_allow_html=True)  # end #smeWrap
+
+# ============ Right-side Vocabulary slide (placeholder; can wire later) ============
 panel_class = "show" if ss.show_vocab else ""
 st.markdown(
     f"""
 <div id="vocabPanel" class="{panel_class}">
   <div style="display:flex;justify-content:space-between;align-items:center;">
     <h3>📚 Vocabulary</h3>
-    <form action="#" method="get">
-      <button class="vocab-close" type="submit">✖ Close</button>
-    </form>
+    <a class="vocab-close" href="?">✖ Close</a>
   </div>
   <small>Query:</small>
   <div style="margin:6px 0 12px 0; padding:8px; border:1px solid #374151; border-radius:8px;">
     {st.session_state.get("vocab_query","")}
   </div>
   <div style="opacity:.85;">
-    <p>This is a placeholder. Wire this panel to your glossary when ready:
-    match the query to a CSV/Drive source and render the hits here.</p>
+    <p>Hook this to your glossary CSV/Drive when ready. Render matches here.</p>
   </div>
 </div>
 """,
     unsafe_allow_html=True,
 )
-
-# Close panel when the form above is submitted (simulate with query flag)
+# Close panel when link clicked (refresh with empty query)
 if ss.show_vocab and st.query_params.get("", []):
     ss.show_vocab = False
     st.rerun()
