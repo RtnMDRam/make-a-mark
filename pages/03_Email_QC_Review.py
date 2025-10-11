@@ -222,7 +222,7 @@ with st.expander("📥 Load bilingual file (.csv/.xlsx) & map columns", expanded
                 ss.qc_work = _ensure_work(ss.qc_src, ss.qc_map)
                 ss.qc_idx = 0
                 st.success(f"Loaded {len(ss.qc_work)} rows. Headers will be preserved in exports.")
-                st.experimental_rerun()
+                st._rerun()
 
 # Stop until we have data
 if ss.qc_work.empty:
