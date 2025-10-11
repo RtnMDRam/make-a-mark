@@ -110,10 +110,11 @@ def build_alloc_df(smes, total_rows: int) -> pd.DataFrame:
 # ----------- SME Allocation -----------
 st.subheader("👥 SME Allocation")
 
-num_smes = st.number_input("Number of SMEs", min_value=1, max_value=50, value=3)
-num_smes = st.number_input("Number of SMEs", min_value=1, max_value=50, value=3)
-smes = []
+# single, unique control for number of SMEs
+num_smes = st.number_input("Number of SMEs", min_value=1, max_value=50, value=3, key="num_smes")
+smes: list[tuple[str, str]] = []
 
+# Build SME list (use SME Master if available)
 for i in range(num_smes):
     c1, c2 = st.columns(2)
 
@@ -124,20 +125,21 @@ for i in range(num_smes):
             sub = st.selectbox(
                 f"SME {i+1} Subject",
                 sorted(df_master["Subject"].dropna().unique().tolist()),
-                key=f"sme_subject_{i}",
+                key=f"sme_subj_{i}",
             )
 
-            pool = df_master[df_master["Subject"] == sub].copy()
-            # Label shows Name + (Place/Taluk/District) + WhatsApp
-            pool["Label"] = pool.apply(
-                lambda r: f"{r['Name']} — {r.get('Place','')} {r.get('Taluk','')} {r.get('District','')} ({str(r.get('WhatsApp') or '')})",
-                axis=1,
-            )
+        pool = df_master[df_master["Subject"] == sub].copy()
+        # Label shows Name + (Place/Taluk/District) + WhatsApp
+        pool["Label"] = pool.apply(
+            lambda r: f"{r.get('Name','')} — {r.get('Place','')}, {r.get('Taluk','')} {r.get('District','')} • {r.get('WhatsApp','')}",
+            axis=1,
+        )
 
+        with c1:
             choice = st.selectbox(
                 f"SME {i+1} Name",
                 pool["Label"].tolist(),
-                key=f"sme_name_{i}",
+                key=f"sme_choice_{i}",
             )
 
         with c2:
@@ -149,15 +151,15 @@ for i in range(num_smes):
 
         name = sel["Name"] if choice else ""
         smes.append((name, email))
-
     else:
-        # fallback if SME master is empty
+        # fallback – type name/email manually
         with c1:
             name = st.text_input(f"SME {i+1} Name", key=f"name_{i}")
         with c2:
             email = st.text_input(f"SME {i+1} Email", key=f"email_{i}")
         smes.append((name, email))
 
+# Show total rows once a QB is loaded (df is set earlier in the file)
 if df is not None:
     total_rows = len(df)
     st.write(f"📄 **Total rows in file:** {total_rows}")
@@ -169,59 +171,54 @@ if df is not None:
         st.session_state.total_rows = total_rows
         st.success("✅ Allocation table created automatically!")
 
-    # --- Manual Assignment Mode ---
+    # ---- Manual Assignment Mode ----
     st.markdown("### ✋ Manual Assignment Mode")
-    if not st.session_state.alloc_df.empty:
+    if "alloc_df" in st.session_state and not st.session_state.alloc_df.empty:
         alloc_df = st.session_state.alloc_df.copy()
         total_rows = st.session_state.total_rows
 
-        st.info("Adjust row distribution manually below. Totals will auto-update.")
+        st.info("Adjust row distribution below. Totals auto-update.")
         remaining = total_rows
-        manual_counts = []
+        manual_counts: list[int] = []
 
         for i, (name, email) in enumerate(smes):
             c1, c2 = st.columns([3, 1])
             with c1:
                 st.write(f"**{name or f'SME {i+1}'}** ({email})")
             with c2:
+                default = int(alloc_df.loc[i, "AssignedCount"]) if i < len(alloc_df) else 0
                 count = st.number_input(
-                    "Rows",
-                    key=f"manual_{i}",
-                    min_value=0,
-                    max_value=remaining,
-                    value=int(alloc_df.loc[i, "AssignedCount"]) if i < len(alloc_df) else 0,
+                    "Rows", key=f"manual_{i}",
+                    min_value=0, max_value=max(0, remaining),
+                    value=min(default, max(0, remaining)) if i < len(smes)-1 else max(0, remaining),
                 )
-                manual_counts.append(count)
-                remaining -= count
+                manual_counts.append(int(count))
+                remaining -= int(count)
 
         if remaining > 0:
             st.warning(f"{remaining} rows unassigned.")
         elif remaining < 0:
             st.error("Too many rows assigned — reduce one SME’s count.")
 
-        # Apply manual counts -> convert to contiguous ranges
-        if st.button("🔁 Apply Manual Assignment"):
-            start = 1
+        if st.button("🔁 Apply Manual Assignment") and remaining == 0:
             rows = []
+            start = 1
             for (name, email), count in zip(smes, manual_counts):
                 end = start + count - 1 if count > 0 else 0
-                rows.append(
-                    {
-                        "SME": name,
-                        "Email": email,
-                        "StartRow": start if count > 0 else 0,
-                        "EndRow": end if count > 0 else 0,
-                        "AssignedCount": max(0, end - start + 1) if count > 0 else 0,
-                        "Status": "Not Started",
-                        "Notes/Link": "",
-                    }
-                )
+                rows.append({
+                    "SME": name, "Email": email,
+                    "StartRow": start if count > 0 else 0,
+                    "EndRow":   end   if count > 0 else 0,
+                    "AssignedCount": max(0, end - start + 1) if count > 0 else 0,
+                    "Status": "Not Started",
+                    "Notes/Link": "",
+                })
                 start = (end + 1) if count > 0 else start
             st.session_state.alloc_df = pd.DataFrame(rows)
             st.success("✅ Manual assignment applied successfully!")
 
-# ---- Display Editable Allocation Table ----
-if not st.session_state.alloc_df.empty:
+# ---- Display / Edit Allocation Table ----
+if "alloc_df" in st.session_state and not st.session_state.alloc_df.empty:
     st.subheader("📋 Current SME Allocation Table")
     df_view = st.session_state.alloc_df.copy()
 
@@ -229,7 +226,7 @@ if not st.session_state.alloc_df.empty:
         df_view,
         num_rows="fixed",
         use_container_width=True,
-        height=420,   # keeps editor visible above iPad keyboard
+        height=420,  # keeps editor visible above iPad keyboard
         key="alloc_editor",
         column_config={
             "SME": st.column_config.TextColumn("SME", help="SME Name"),
@@ -245,18 +242,29 @@ if not st.session_state.alloc_df.empty:
     c1, c2 = st.columns(2)
     with c1:
         if st.button("💾 Save Allocation Changes"):
-            # Recompute AssignedCount from Start/End on save
             ed = edited.copy()
-            def _recount(row):
-                s = int(row.get("StartRow", 0) or 0)
-                e = int(row.get("EndRow", 0) or 0)
-                return max(0, e - s + 1) if s > 0 and e >= s else 0
-            ed["AssignedCount"] = ed.apply(_recount, axis=1)
+
+            # recompute AssignedCount safely
+            def _safe_int(x, default=0):
+                try:
+                    return int(x)
+                except Exception:
+                    return default
+
+            ed["StartRow"] = ed["StartRow"].apply(_safe_int)
+            ed["EndRow"]   = ed["EndRow"].apply(_safe_int)
+            # clamp and ensure End >= Start
+            total_rows = st.session_state.get("total_rows", len(df_view))
+            ed["StartRow"] = ed["StartRow"].clip(lower=1, upper=max(1, total_rows))
+            ed["EndRow"]   = ed["EndRow"].clip(lower=1, upper=max(1, total_rows))
+            ed["EndRow"]   = ed[["StartRow", "EndRow"]].max(axis=1)
+
+            ed["AssignedCount"] = (ed["EndRow"] - ed["StartRow"] + 1).clip(lower=0)
             st.session_state.alloc_df = ed
-            st.success("Changes saved successfully!")
+            st.success("✅ Changes saved and counts recalculated!")
 
     with c2:
-        csv_bytes = st.session_state.alloc_df.to_csv(index=False).encode("utf-8-sig")
+        csv_bytes = edited.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
             "⬇️ Download Allocation CSV",
             data=csv_bytes,
