@@ -1,25 +1,24 @@
 # pages/03_Email_QC_Panel.py
-# Final Compact SME QC Panel (English ↔ Tamil)
-# Version: Streamlit Compact Panel Layout for iPad — Oct 2025
+# Final Compact SME QC Panel (English ↔ Tamil) — fixed KeyError (std keys)
 
 import re
 import pandas as pd
 import streamlit as st
 from lib import apply_theme, read_bilingual, export_qc, auto_guess_map, ensure_work
 
-# ---------------- PAGE CONFIG ----------------
+# ---------- Page config
 st.set_page_config(page_title="SME QC Panel", page_icon="📝", layout="wide")
 
-# ---------------- CSS STYLING ----------------
+# ---------- CSS
 st.markdown("""
 <style>
-section.main > div {padding-top: 0.4rem;}
+section.main > div {padding-top: .4rem;}
 .block {padding:10px 12px;margin:6px 0;border-radius:10px;border:1.5px solid var(--secondary-background-color);}
 .block.en {background:rgba(66,133,244,.08);border-color:rgba(66,133,244,.35);}
 .block.ta {background:rgba(52,168,83,.10);border-color:rgba(52,168,83,.35);}
 .block.qc {background:rgba(244,180,0,.10);border-color:rgba(244,180,0,.35);}
 .block.saved {background:rgba(234,67,53,.08);border-color:rgba(234,67,53,.35);}
-.block h5 {margin:0 0 6px 0;font-size:0.95rem;}
+.block h5 {margin:0 0 6px 0;font-size:.95rem;}
 .rowline {margin:4px 0;}
 .smallcap {opacity:.7;font-size:.85rem;margin-bottom:4px}
 .stTextArea textarea {line-height:1.4;}
@@ -33,7 +32,7 @@ section.main > div {padding-top: 0.4rem;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- SESSION SETUP ----------------
+# ---------- Session
 ss = st.session_state
 if "night" not in ss: ss.night = False
 if "qc_src" not in ss: ss.qc_src = pd.DataFrame()
@@ -45,8 +44,8 @@ if "show_loader" not in ss: ss.show_loader = True
 
 apply_theme(ss.night, hide_sidebar=True)
 
-# ---------------- HELPERS ----------------
-def _txt(s): 
+# ---------- Helpers
+def _txt(s):
     s = "" if s is None else str(s)
     return s.replace("\r\n","\n").replace("\r","\n").strip()
 
@@ -71,7 +70,7 @@ def join_options(ABCD):
 def compose_qc_ta(q,abcd,ans,exp):
     return f"கேள்வி: {_txt(q)}\nவிருப்பங்கள் (A–D): {join_options(abcd)}\nபதில்: {_txt(ans)}\nவிளக்கம்:\n{_txt(exp)}"
 
-# ---------------- FILE LOAD ----------------
+# ---------- Load + map
 with st.expander("📥 Load bilingual file (.csv/.xlsx) & map columns", expanded=ss.show_loader):
     up = st.file_uploader("Upload bilingual file", type=["csv","xlsx"], label_visibility="collapsed")
     if up is not None:
@@ -102,20 +101,23 @@ with st.expander("📥 Load bilingual file (.csv/.xlsx) & map columns", expanded
                     "Q_EN":en_q,"OPT_EN":en_opt,"ANS_EN":en_ans,"EXP_EN":en_exp,
                     "Q_TA":ta_q,"OPT_TA":ta_opt,"ANS_TA":ta_ans,"EXP_TA":ta_exp
                 }
+                # Build standardized working copy with fixed headers
                 ss.qc_work = ensure_work(ss.qc_src, ss.qc_map)
                 ss.qc_idx=0
                 ss.show_loader=False
                 st.success(f"Loaded {len(ss.qc_work)} rows.")
                 st.rerun()
 
-if ss.qc_work.empty: st.stop()
-m = ss.qc_map
+if ss.qc_work.empty:
+    st.stop()
+
+# row/keys (NOTE: now reading standardized keys directly)
 row = ss.qc_work.iloc[ss.qc_idx]
 
-# ---------------- HEADER (5%) ----------------
+# ---------- Header (5%)
 st.markdown(f"""
 <div class='topbar'>
- <div class='idtag'>🆔 ID: {row[m["ID"]]}</div>
+ <div class='idtag'>🆔 ID: {_txt(row.get("ID",""))}</div>
  <div class='grow progresswrap'></div>
 </div>
 """, unsafe_allow_html=True)
@@ -131,10 +133,18 @@ with nav3:
     if st.button("Next ▶️",use_container_width=True,disabled=ss.qc_idx>=len(ss.qc_work)-1):
         ss.qc_idx+=1; st.rerun()
 
-# ---------------- DISPLAY PANELS ----------------
-en_q=_txt(row[m["Q_EN"]]); en_op=_txt(row[m["OPT_EN"]]); en_ans=_txt(row[m["ANS_EN"]]); en_exp=_txt(row[m["EXP_EN"]])
-ta_q0=_txt(row[m["Q_TA"]]); ta_op0=_txt(row[m["OPT_TA"]]); ta_ans0=_txt(row[m["ANS_TA"]]); ta_exp0=_txt(row[m["EXP_TA"]])
+# ---------- Pull display values (safe)
+en_q  = _txt(row.get("Q_EN",""))
+en_op = _txt(row.get("OPT_EN",""))
+en_ans= _txt(row.get("ANS_EN",""))
+en_exp= _txt(row.get("EXP_EN",""))
 
+ta_q0  = _txt(row.get("Q_TA",""))
+ta_op0 = _txt(row.get("OPT_TA",""))
+ta_ans0= _txt(row.get("ANS_TA",""))
+ta_exp0= _txt(row.get("EXP_TA",""))
+
+# ---------- EN panel
 st.markdown(f"""
 <div class='block en'>
 <h5>English Version / ஆங்கிலம்</h5>
@@ -145,6 +155,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# ---------- TA original panel
 st.markdown(f"""
 <div class='block ta'>
 <h5>Tamil Original / தமிழ் மூலப் பதிப்பு</h5>
@@ -155,7 +166,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ---------------- SME EDIT PANEL ----------------
+# ---------- SME Edit console
 row_key=f"r{ss.qc_idx}"
 if f"init_{row_key}" not in ss:
     opts0=split_options(ta_op0)
@@ -177,8 +188,11 @@ ans_val=st.text_input("பதில்",value=ss[f"ans_{row_key}"],key=f"ans_{ro
 exp_val=st.text_area("விளக்கம்",value=ss[f"exp_{row_key}"],key=f"exp_{row_key}",height=140)
 
 # Live preview (Yellow)
-live_html=compose_qc_ta(q_val,{"A":a_val,"B":b_val,"C":c_val,"D":d_val},ans_val,exp_val).replace("\n","<br>")
-st.markdown(f"<div class='block qc'><b>Live Preview / ஆசிரியர் QC முன்னோட்டம்</b><br>{live_html}</div>",unsafe_allow_html=True)
+def _live_html():
+    return compose_qc_ta(
+        q_val, {"A":a_val,"B":b_val,"C":c_val,"D":d_val}, ans_val, exp_val
+    ).replace("\n","<br>")
+st.markdown(f"<div class='block qc'><b>Live Preview / ஆசிரியர் QC முன்னோட்டம்</b><br>{_live_html()}</div>",unsafe_allow_html=True)
 
 # Last saved (Red)
 qc_col="QC_TA"
@@ -197,15 +211,15 @@ with s1:
         st.success("Saved successfully.")
 with s2:
     if st.button("💾 Save & Next ▶️",use_container_width=True):
-        final_text=compose_qc_ta(q_val,{"A":a_val,"B":b_val,"C":c_val,"D":d_val},ans_val,exp_val)
+        final_text=compose_qc_ta(q_val,{"A":a_val,"B":b_val,"C":c_val,"D":dval},ans_val,exp_val)
         ss.qc_work.at[ss.qc_idx,qc_col]=final_text
         if ss.qc_idx < len(ss.qc_work)-1:
             ss.qc_idx+=1
         st.rerun()
 with s3:
-    st.markdown("<div class='tip'>Tip: Yellow shows your live edits, Red shows last saved text.</div>",unsafe_allow_html=True)
+    st.markdown("<div class='tip'>Tip: Yellow shows your live edits; Red shows last saved text.</div>",unsafe_allow_html=True)
 
-# ---------------- EXPORT ----------------
+# ---------- Export
 st.subheader("⬇️ Export QC Files")
 xlsx_bytes,csv_bytes=export_qc(ss.qc_src,ss.qc_work,ss.qc_map)
 base=(ss.uploaded_name or "qc_file").replace(".","_")
