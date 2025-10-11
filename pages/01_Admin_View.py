@@ -94,15 +94,69 @@ if df is not None:
         st.session_state.total_rows = total_rows
         st.success("✅ Allocation table created successfully!")
 
-# ---------- Display Allocation ----------
+# ----------- Display Allocation -----------
 if not st.session_state.alloc_df.empty:
     st.subheader("📋 Current SME Allocation Table")
-    st.dataframe(st.session_state.alloc_df, use_container_width=True)
 
-    csv = st.session_state.alloc_df.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        label="⬇️ Download Allocation CSV",
-        data=csv,
-        file_name="sme_allocation.csv",
-        mime="text/csv",
+    df_view = st.session_state.alloc_df.copy()
+    total_rows = st.session_state.get("total_rows", len(df_view))
+
+    edited = st.data_editor(
+        df_view,
+        num_rows="fixed",
+        use_container_width=True,
+        key="alloc_editor",
+        column_config={
+            "SME": st.column_config.TextColumn("SME", help="SME name"),
+            "Email": st.column_config.TextColumn("Email", help="SME email (read-only)", disabled=True),
+            "StartRow": st.column_config.NumberColumn(
+                "StartRow", min_value=1, max_value=total_rows, step=1, help="First row (1-indexed)"
+            ),
+            "EndRow": st.column_config.NumberColumn(
+                "EndRow", min_value=1, max_value=total_rows, step=1, help="Last row (1-indexed)"
+            ),
+            "AssignedCount": st.column_config.NumberColumn(
+                "Assigned", disabled=True, help="Computed: EndRow - StartRow + 1"
+            ),
+            "Status": st.column_config.SelectboxColumn(
+                "Status", options=STATUS_CHOICES, help="Per-SME progress"
+            ),
+            "Notes/Link": st.column_config.TextColumn("Notes/Link", help="Optional notes or link"),
+        },
     )
+
+    # Recompute AssignedCount from Start/End
+    edited["AssignedCount"] = (edited["EndRow"] - edited["StartRow"] + 1).clip(lower=0)
+
+    # Basic validations
+    issues = []
+    for _, r in edited.iterrows():
+        if r["StartRow"] > r["EndRow"]:
+            issues.append(f"❌ {r['SME']}: StartRow ({r['StartRow']}) is greater than EndRow ({r['EndRow']}).")
+        if r["StartRow"] < 1 or r["EndRow"] > total_rows:
+            issues.append(f"❌ {r['SME']}: Range [{r['StartRow']}-{r['EndRow']}] is outside 1..{total_rows}.")
+
+    # Overlap check (sorted by start)
+    ranges = sorted(
+        [(int(r["StartRow"]), int(r["EndRow"]), str(r["SME"])) for _, r in edited.iterrows()],
+        key=lambda x: x[0],
+    )
+    for i in range(len(ranges) - 1):
+        s1, e1, n1 = ranges[i]
+        s2, e2, n2 = ranges[i + 1]
+        if s2 <= e1:
+            issues.append(f"⚠️ Overlap: {n1} [{s1}-{e1}] with {n2} [{s2}-{e2}].")
+
+    for msg in issues:
+        (st.error if msg.startswith("❌") else st.warning)(msg)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("💾 Save allocation changes"):
+            st.session_state.alloc_df = edited
+            st.success("Saved changes to current session.")
+
+    with c2:
+        csv_bytes = edited.to_csv(index=False).encode("utf-8-sig")
+        st.download_button("⬇️ Download Allocation CSV", data=csv_bytes,
+                           file_name="sme_allocation.csv", mime="text/csv")
