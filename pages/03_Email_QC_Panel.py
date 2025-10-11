@@ -53,7 +53,9 @@ def mapping_complete(m: dict) -> bool:
     return all(k in m and m[k] for k in REQUIRED_KEYS)
 
 def mapping_columns_exist(df: pd.DataFrame, m: dict) -> bool:
-    return all((k in m) and (m[k] in df.columns or k=="QC_TA" and m[k]) for k in REQUIRED_KEYS)
+    # All *mapped* columns (except QC_TA which we can create) must exist in the uploaded source
+    needed = [k for k in REQUIRED_KEYS if k != "QC_TA"]
+    return all((k in m) and (m[k] in df.columns) for k in needed)
 
 # ---------- Upload & map ----------
 def show_mapper(expanded=True):
@@ -82,12 +84,10 @@ def show_mapper(expanded=True):
                     sel["OPT_TA"] = st.selectbox("Options (Tamil)",   cols, index=cols.index(auto["OPT_TA"]) if auto["OPT_TA"] in cols else 0)
                     sel["ANS_TA"] = st.selectbox("Answer (Tamil)",    cols, index=cols.index(auto["ANS_TA"]) if auto["ANS_TA"] in cols else 0)
                     sel["EXP_TA"] = st.selectbox("Explanation (Tamil)", cols, index=cols.index(auto["EXP_TA"]) if auto["EXP_TA"] in cols else 0)
-
                     qc_choices = cols + ["<create new column ‘QC_TA’>"]
                     qc_pick = st.selectbox("QC Verified (Tamil) → save into", qc_choices,
                                            index=(qc_choices.index("QC_TA") if "QC_TA" in cols else len(qc_choices)-1))
-                    sel["QC_TA"] = "QC_TA" if qc_pick.endswith("QC_TA’>") or qc_pick=="<create new column ‘QC_TA’>" else qc_pick
-
+                    sel["QC_TA"] = "QC_TA" if qc_pick.startswith("<create") else qc_pick
                 if st.button("✅ Confirm mapping & start QC"):
                     ss.qc_map = sel
                     ss.qc_work = ensure_work(ss.qc_src, ss.qc_map)
@@ -97,21 +97,30 @@ def show_mapper(expanded=True):
                     st.success(f"Loaded {len(ss.qc_work)} rows. Headers preserved in exports.")
                     st.rerun()
 
-# 1) If nothing loaded yet → open mapper
+# If nothing loaded / mapping invalid → open mapper
 if ss.qc_src.empty or not mapping_complete(ss.qc_map) or not mapping_columns_exist(ss.qc_src, ss.qc_map):
     if not ss.qc_src.empty:
         st.warning("Column mapping is incomplete or your file’s headers changed. Please re-confirm mapping below.")
     show_mapper(expanded=True)
     st.stop()
 
-# 2) Ensure working copy OK (defensive)
+# Ensure working copy OK (defensive)
 if ss.qc_work.empty:
     ss.qc_work = ensure_work(ss.qc_src, ss.qc_map)
-    if ss.qc_map["QC_TA"] not in ss.qc_work.columns:
-        ss.qc_work[ss.qc_map["QC_TA"]] = ""
+if ss.qc_map["QC_TA"] not in ss.qc_work.columns:
+    ss.qc_work[ss.qc_map["QC_TA"]] = ""
 
 M = ss.qc_map
-row = ss.qc_work.iloc[ss.qc_idx]
+
+# Clamp index just in case
+if ss.qc_idx >= len(ss.qc_src): ss.qc_idx = max(0, len(ss.qc_src)-1)
+if len(ss.qc_src) == 0:
+    st.info("No rows in file.")
+    st.stop()
+
+# Use SOURCE row for originals (prevents KeyError)
+row_src  = ss.qc_src.iloc[ss.qc_idx]
+row_work = ss.qc_work.iloc[ss.qc_idx]
 
 # ---------- HEADER ----------
 with st.container():
@@ -121,16 +130,16 @@ with st.container():
         st.markdown("<span class='tag'>📝 SME QC Panel</span>", unsafe_allow_html=True)
         st.caption("English ↔ Tamil · single-page QC")
     with mid:
-        st.progress((ss.qc_idx+1)/len(ss.qc_work))
-        st.caption(f"ID: {_as_text(row[M['ID']])} · Row {ss.qc_idx+1} / {len(ss.qc_work)}")
+        st.progress((ss.qc_idx+1)/len(ss.qc_src))
+        st.caption(f"ID: {_as_text(row_src.get(M['ID'], ''))} · Row {ss.qc_idx+1} / {len(ss.qc_src)}")
     with right:
         c1, c2, c3 = st.columns(3)
         with c1:
             if st.button("◀︎ Prev", use_container_width=True, disabled=ss.qc_idx<=0):
                 ss.qc_idx = max(0, ss.qc_idx-1); st.rerun()
         with c2:
-            if st.button("Next ▶︎", use_container_width=True, disabled=ss.qc_idx>=len(ss.qc_work)-1):
-                ss.qc_idx = min(len(ss.qc_work)-1, ss.qc_idx+1); st.rerun()
+            if st.button("Next ▶︎", use_container_width=True, disabled=ss.qc_idx>=len(ss.qc_src)-1):
+                ss.qc_idx = min(len(ss.qc_src)-1, ss.qc_idx+1); st.rerun()
         with c3:
             xbytes, _ = export_qc(ss.qc_src, ss.qc_work, ss.qc_map)
             base = (ss.uploaded_name or "qc_file").replace(".","_")
@@ -140,11 +149,15 @@ with st.container():
                 disabled=(xbytes is None), use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------- ORIGINALS (compact) ----------
-en_q  = _as_text(row[M["Q_EN"]]);   en_op = _as_text(row[M["OPT_EN"]])
-en_ans= _as_text(row[M["ANS_EN"]]); en_ex = _as_text(row[M["EXP_EN"]])
-ta_q0  = _as_text(row[M["Q_TA"]]);  ta_op0 = _as_text(row[M["OPT_TA"]])
-ta_ans0= _as_text(row[M["ANS_TA"]]);ta_ex0 = _as_text(row[M["EXP_TA"]])
+# ---------- ORIGINALS (compact) — from SOURCE ----------
+en_q   = _as_text(row_src.get(M["Q_EN"],  ""))
+en_op  = _as_text(row_src.get(M["OPT_EN"], ""))
+en_ans = _as_text(row_src.get(M["ANS_EN"], ""))
+en_ex  = _as_text(row_src.get(M["EXP_EN"], ""))
+ta_q0   = _as_text(row_src.get(M["Q_TA"],  ""))
+ta_op0  = _as_text(row_src.get(M["OPT_TA"], ""))
+ta_ans0 = _as_text(row_src.get(M["ANS_TA"], ""))
+ta_ex0  = _as_text(row_src.get(M["EXP_TA"], ""))
 
 en_block = f"{en_q}\n\nOptions (A–D):\n{en_op}\n\nAnswer: {en_ans}\n\nExplanation:\n{en_ex}"
 ta_block = f"{ta_q0}\n\nவிருப்பங்கள் (A–D):\n{ta_op0}\n\nபதில்: {ta_ans0}\n\nவிளக்கம்:\n{ta_ex0}"
@@ -194,7 +207,7 @@ with b1:
 with b2:
     if st.button("💾 Save & Next ▶︎", use_container_width=True):
         ss.qc_work.at[ss.qc_idx, M["QC_TA"]] = qc_text_live
-        if ss.qc_idx < len(ss.qc_work)-1:
+        if ss.qc_idx < len(ss.qc_src)-1:
             ss.qc_idx += 1
         st.success("Saved. Moving to next row…")
         st.rerun()
