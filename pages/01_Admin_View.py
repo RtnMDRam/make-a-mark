@@ -111,14 +111,52 @@ def build_alloc_df(smes, total_rows: int) -> pd.DataFrame:
 st.subheader("👥 SME Allocation")
 
 num_smes = st.number_input("Number of SMEs", min_value=1, max_value=50, value=3)
+num_smes = st.number_input("Number of SMEs", min_value=1, max_value=50, value=3)
 smes = []
+
 for i in range(num_smes):
     c1, c2 = st.columns(2)
-    with c1:
-        name = st.text_input(f"SME {i+1} Name", key=f"name_{i}")
-    with c2:
-        email = st.text_input(f"SME {i+1} Email", key=f"email_{i}")
-    smes.append((name, email))
+
+    if "sme_master" in st.session_state and not st.session_state.sme_master.empty:
+        df_master = st.session_state.sme_master.copy()
+
+        with c1:
+            sub = st.selectbox(
+                f"SME {i+1} Subject",
+                sorted(df_master["Subject"].dropna().unique().tolist()),
+                key=f"sme_subject_{i}",
+            )
+
+            pool = df_master[df_master["Subject"] == sub].copy()
+            # Label shows Name + (Place/Taluk/District) + WhatsApp
+            pool["Label"] = pool.apply(
+                lambda r: f"{r['Name']} — {r.get('Place','')} {r.get('Taluk','')} {r.get('District','')} ({str(r.get('WhatsApp') or '')})",
+                axis=1,
+            )
+
+            choice = st.selectbox(
+                f"SME {i+1} Name",
+                pool["Label"].tolist(),
+                key=f"sme_name_{i}",
+            )
+
+        with c2:
+            email = ""
+            if choice:
+                sel = pool.iloc[pool["Label"].tolist().index(choice)]
+                email = sel["Email"]
+            st.text_input(f"SME {i+1} Email", value=email, key=f"email_{i}", disabled=True)
+
+        name = sel["Name"] if choice else ""
+        smes.append((name, email))
+
+    else:
+        # fallback if SME master is empty
+        with c1:
+            name = st.text_input(f"SME {i+1} Name", key=f"name_{i}")
+        with c2:
+            email = st.text_input(f"SME {i+1} Email", key=f"email_{i}")
+        smes.append((name, email))
 
 if df is not None:
     total_rows = len(df)
