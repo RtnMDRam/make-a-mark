@@ -1,18 +1,16 @@
-# lib/glossary.py (stub)
-import streamlit as st
+# lib/glossary.py
+from typing import List, Dict
 
-def ui(glossary: list, query: str = "") -> str:
-    """Very small placeholder: shows glossary and returns possibly updated query."""
-    st.markdown("### Vocabulary / சொற்கஞ்சியம்")
-    if glossary:
-        st.write(", ".join(f"{g.get('en','')} → {g.get('ta','')}" for g in glossary))
-    else:
-        st.info("No glossary yet. Add below.")
-    with st.expander("Add to glossary"):
-        en = st.text_input("English")
-        ta = st.text_input("Tamil")
-        if st.button("➕ Add term"):
-            if en.strip() and ta.strip():
-                glossary.append({"en": en.strip(), "ta": ta.strip()})
-                st.success("Added.")
-    return st.text_input("🔎 Quick lookup (type English word)", value=query)
+def sort_glossary(items: List[Dict[str,str]]):
+    return sorted(items, key=lambda x: (x.get("en","") or "").lower())
+
+def render_matches(glossary: List[Dict[str,str]], query: str) -> str:
+    if not query.strip():
+        if glossary:
+            gl = sort_glossary(glossary)
+            return "<b>Recently added</b><br>" + "<br>".join([f"• <b>{g['en']}</b> → {g['ta']}" for g in gl[-10:]])
+        return "No glossary yet. Add below."
+    hits = [g for g in glossary if (g.get("en") or "").lower().startswith(query.strip().lower())]
+    if not hits:
+        return "No matches."
+    return "<b>Matches</b><br>" + "<br>".join([f"• <b>{g['en']}</b> → {g['ta']}" for g in sort_glossary(hits)])
