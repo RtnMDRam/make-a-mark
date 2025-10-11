@@ -1,39 +1,39 @@
 # pages/03_Email_QC_Panel.py
-# SME-only single-page editor — compact console + Excel-like option grid
+# SME-only compact editor: two buttons bottom, options tighter, answer on its own row
 import io, re
 import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="SME QC Panel", page_icon="📝", layout="wide", initial_sidebar_state="collapsed")
 
-# ---------- compact chrome & spacing ----------
+# ------------------- CSS: compact page & inputs -------------------
 st.markdown("""
 <style>
-/* Hide sidebar & top chrome */
+/* Hide sidebar + top chrome for SME view */
 [data-testid="stSidebar"]{display:none;}
 header, footer, .stAppToolbar, [data-testid="collapsedControl"] {visibility:hidden;height:0;}
-/* Page padding smaller (and VERY small bottom so no big blank under buttons) */
-main .block-container {padding-top:12px; padding-bottom:56px;}
-/* Panels */
-.box{border:1px solid #d9d9d9;border-radius:12px;padding:12px 14px;margin:8px 0}
+/* Smaller paddings; tiny bottom so no empty space */
+main .block-container {padding-top:12px; padding-bottom:12px;}
+/* Panel looks */
+.box{border:1px solid #d9d9d9;border-radius:12px;padding:10px 12px;margin:8px 0}
 .box.en{background:#eaf2ff;border-color:#9cc4ff}
 .box.ta{background:#eaf7ec;border-color:#8ed39a}
 .label{display:inline-block;background:#eef1f3;padding:2px 8px;border-radius:6px;font-size:.9rem;margin-bottom:6px}
-.hr{height:6px}
-/* Editor compaction */
+/* Inputs compact */
 div[data-testid="stTextInput"]>div>label,
 div[data-testid="stTextArea"]>div>label {display:none !important;}
 div[data-testid="stTextInput"], div[data-testid="stTextArea"] {margin-bottom:6px;}
-/* Make inputs comfy on iPad */
 input, textarea {font-size:16px;}
-/* Give the middle answer cell a slight emphasis box feel */
-.anscell > div > div {border:1px solid #bbb !important; border-radius:8px !important;}
-/* Buttons row spacing */
-.btnrow [data-testid="baseButton-secondary"]{margin-top:0;}
+/* Option grid tighter */
+.optrow {margin-top:4px; margin-bottom:0;}
+/* Emphasis box for Answer row */
+.answrap > div > div {border:1px solid #b5b5b5 !important; border-radius:8px !important;}
+/* Button row */
+.btnrow {margin-top:8px;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- required columns ----------
+# ------------------- required columns -------------------
 REQ_COLS = [
     "ID",
     "Question (English)", "Options (English)", "Answer (English)", "Explanation (English)",
@@ -41,7 +41,7 @@ REQ_COLS = [
     "QC_TA"
 ]
 
-# ---------- helpers ----------
+# ------------------- helpers -------------------
 def _txt(v):
     if pd.isna(v): return ""
     return str(v).replace("\r\n","\n").strip()
@@ -79,10 +79,12 @@ def _clean_drive(url:str)->str:
 
 def read_from_link(url:str)->pd.DataFrame:
     url=_clean_drive(url.strip())
+    # csv first
     try:
         return pd.read_csv(url)
     except Exception:
         pass
+    # then xlsx
     try:
         return pd.read_excel(url)
     except Exception as e:
@@ -120,6 +122,7 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 def apply_subset(df: pd.DataFrame) -> pd.DataFrame:
+    # allow deep-link ?ids=1,2 or ?rows=11-25
     try:
         qp = st.query_params
     except Exception:
@@ -138,12 +141,12 @@ def apply_subset(df: pd.DataFrame) -> pd.DataFrame:
             return df.iloc[a-1:b].reset_index(drop=True)
     return df
 
-# ---------- session ----------
+# ------------------- session -------------------
 ss=st.session_state
 for k,v in [("qc_src",pd.DataFrame()),("qc_work",pd.DataFrame()),("qc_idx",0),("link_in",""),("dl_buf",None)]:
     if k not in ss: ss[k]=v
 
-# ---------- deep-link auto load ----------
+# ------------------- deep-link auto load -------------------
 try:
     qp = st.query_params
 except Exception:
@@ -159,70 +162,50 @@ if auto_file and ss.qc_work.empty:
     except Exception as e:
         st.error(str(e))
 
-# ---------- top status ----------
+# ------------------- Admin loader (only when empty) -------------------
 if ss.qc_work.empty:
     st.markdown("### 📝 SME QC Panel")
-    st.info("Data not loaded. Upload/paste link at bottom, or open this page from your email deep-link (?file=...).")
-else:
-    row = ss.qc_work.iloc[ss.qc_idx]; rid=row["ID"]
-    h1,h2,h3 = st.columns([2,4,2])
-    with h1: st.markdown("## 📝 SME QC Panel")
-    with h2:
-        st.caption(f"English ⇄ Tamil · Row {ss.qc_idx+1}/{len(ss.qc_work)} · ID: {rid}")
-        st.progress((ss.qc_idx+1)/max(1,len(ss.qc_work)))
-    with h3:
-        p,n = st.columns(2)
-        with p:
-            if st.button("◀ Prev", use_container_width=True, disabled=ss.qc_idx<=0):
-                ss.qc_idx-=1; st.experimental_rerun()
-        with n:
-            if st.button("Next ▶", use_container_width=True, disabled=ss.qc_idx>=len(ss.qc_work)-1):
-                ss.qc_idx+=1; st.experimental_rerun()
-    st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
-
-# ---------- upload OR link (bottom sticky) ----------
-st.markdown("""
-<style>
-.sme-footer{position:fixed;left:0;right:0;bottom:0;background:rgba(30,30,30,.96);
-  border-top:1px solid #333;padding:10px 14px;z-index:9999}
-.sme-footer .wrap{max-width:1200px;margin:0 auto}
-.sme-footer label,.sme-footer p{color:#ddd!important;margin:0 0 6px 2px;font-size:.9rem}
-.sme-footer .note{color:#9ad27f!important}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="sme-footer"><div class="wrap">', unsafe_allow_html=True)
-t1,t2,t3 = st.columns([4,2,1])
-with t1:
-    st.write("**Upload (CSV/XLSX)**")
-    upl = st.file_uploader(" ", type=["csv","xlsx"], label_visibility="collapsed")
-with t2:
-    st.write("**…or paste link**")
-    ss.link_in = st.text_input(" ", value=ss.link_in, placeholder="https://…/file.csv or Google Drive link", label_visibility="collapsed")
-    st.markdown('<p class="note">Deep-link: ?file=<URL>&ids=1,2 or &rows=10-25</p>', unsafe_allow_html=True)
-with t3:
-    if st.button("Load", use_container_width=True):
-        try:
-            if upl is not None:
-                if upl.name.lower().endswith(".csv"): df=pd.read_csv(upl)
-                else: df=pd.read_excel(upl)
-            else:
-                if not ss.link_in.strip(): raise RuntimeError("Upload a file or paste a link, then press Load.")
-                df=read_from_link(ss.link_in)
-            df = normalize_columns(df)
-            df = apply_subset(df)
-            if "QC_TA" not in df.columns: df["QC_TA"]=""
-            ss.qc_src = df.copy(); ss.qc_work = df.copy(); ss.qc_idx=0
-            st.experimental_rerun()
-        except Exception as e:
-            st.error(str(e))
-st.markdown('</div></div>', unsafe_allow_html=True)
-
-# ---------- stop if nothing loaded ----------
-if ss.qc_work.empty:
+    st.info("Paste the CSV/XLSX link sent by Admin, or upload the file.")
+    c1,c2,c3 = st.columns([4,2,1])
+    with c1:
+        upl = st.file_uploader("Upload file (CSV/XLSX)", type=["csv","xlsx"])
+    with c2:
+        ss.link_in = st.text_input("…or paste link (CSV/XLSX/Drive)", value=ss.link_in)
+    with c3:
+        if st.button("Load", use_container_width=True):
+            try:
+                if upl is not None:
+                    if upl.name.lower().endswith(".csv"): df=pd.read_csv(upl)
+                    else: df=pd.read_excel(upl)
+                else:
+                    if not ss.link_in.strip(): raise RuntimeError("Upload a file or paste a link, then Load.")
+                    df=read_from_link(ss.link_in)
+                df = normalize_columns(df)
+                df = apply_subset(df)
+                if "QC_TA" not in df.columns: df["QC_TA"]=""
+                ss.qc_src = df.copy(); ss.qc_work = df.copy(); ss.qc_idx=0
+                st.experimental_rerun()
+            except Exception as e:
+                st.error(str(e))
     st.stop()
 
-# ---------- reference panels ----------
+# ------------------- Top status -------------------
+row = ss.qc_work.iloc[ss.qc_idx]; rid=row["ID"]
+h1,h2,h3 = st.columns([2,4,2])
+with h1: st.markdown("## 📝 SME QC Panel")
+with h2:
+    st.caption(f"English ⇄ Tamil · Row {ss.qc_idx+1}/{len(ss.qc_work)} · ID: {rid}")
+    st.progress((ss.qc_idx+1)/max(1,len(ss.qc_work)))
+with h3:
+    p,n = st.columns(2)
+    with p:
+        if st.button("◀ Prev", use_container_width=True, disabled=ss.qc_idx<=0):
+            ss.qc_idx-=1; st.experimental_rerun()
+    with n:
+        if st.button("Next ▶", use_container_width=True, disabled=ss.qc_idx>=len(ss.qc_work)-1):
+            ss.qc_idx+=1; st.experimental_rerun()
+
+# ------------------- Reference panels -------------------
 def view_block(title, q, op, ans, exp, cls):
     html = (
         f"<span class='label'>{title}</span><br>"
@@ -233,27 +216,28 @@ def view_block(title, q, op, ans, exp, cls):
     )
     st.markdown(f"<div class='box {cls}'>{html}</div>", unsafe_allow_html=True)
 
-row = ss.qc_work.iloc[ss.qc_idx]
 en_q,en_op,en_ans,en_exp = [row[c] for c in ["Question (English)","Options (English)","Answer (English)","Explanation (English)"]]
 ta_q,ta_op,ta_ans,ta_exp = [row[c] for c in ["Question (Tamil)","Options (Tamil)","Answer (Tamil)","Explanation (Tamil)"]]
 view_block("English Version / ஆங்கிலம்", en_q,en_op,en_ans,en_exp, "en")
 view_block("Tamil Original / தமிழ் மூலப் பதிப்பு", ta_q,ta_op,ta_ans,ta_exp, "ta")
 
-# ---------- SME Edit Console (tight) ----------
+# ------------------- SME Edit Console -------------------
 st.subheader("SME Edit Console / ஆசிரியர் திருத்தம்")
 
 A,B,C,D = _split_opts(ta_op)
 rk=f"r{ss.qc_idx}"
-# initialize once
-for k,v in [(f"q_{rk}",_txt(ta_q)),(f"a_{rk}",A),(f"b_{rk}",B),(f"c_{rk}",C),(f"d_{rk}",D),
-            (f"ans_{rk}",_txt(ta_ans)),(f"exp_{rk}",_txt(ta_exp))]:
+for k,v in [
+    (f"q_{rk}",_txt(ta_q)), (f"a_{rk}",A),(f"b_{rk}",B),(f"c_{rk}",C),(f"d_{rk}",D),
+    (f"ans_{rk}",_txt(ta_ans)), (f"exp_{rk}",_txt(ta_exp))
+]:
     if k not in ss: ss[k]=v
 
-# Question ~ 2 lines; Explanation larger
+# Question (≈2 lines)
 q = st.text_area(" ", value=ss[f"q_{rk}"], key=f"q_in_{rk}", height=72,
                  label_visibility="collapsed", placeholder="கேள்வி / Question (TA)")
 
-# Row 1: A | B
+# Row 1: A | B (tight)
+st.markdown("<div class='optrow'>", unsafe_allow_html=True)
 r1c1, r1c2 = st.columns(2)
 with r1c1:
     a = st.text_input(" ", value=ss[f"a_{rk}"], key=f"a_in_{rk}",
@@ -261,22 +245,28 @@ with r1c1:
 with r1c2:
     b = st.text_input("  ", value=ss[f"b_{rk}"], key=f"b_in_{rk}",
                       label_visibility="collapsed", placeholder="B")
+st.markdown("</div>", unsafe_allow_html=True)
 
-# Row 2: C | Answer | D  (answer in the middle)
-r2c1, r2c2, r2c3 = st.columns([1,1,1])
+# Row 2: C | D (tight)
+st.markdown("<div class='optrow'>", unsafe_allow_html=True)
+r2c1, r2c2 = st.columns(2)
 with r2c1:
     c = st.text_input("   ", value=ss[f"c_{rk}"], key=f"c_in_{rk}",
                       label_visibility="collapsed", placeholder="C")
 with r2c2:
-    with st.container():
-        st.markdown("<div class='anscell'>", unsafe_allow_html=True)
-        ans = st.text_input("    ", value=ss[f"ans_{rk}"], key=f"ans_in_{rk}",
-                            label_visibility="collapsed", placeholder="பதில் / Answer")
-        st.markdown("</div>", unsafe_allow_html=True)
-with r2c3:
-    d = st.text_input("     ", value=ss[f"d_{rk}"], key=f"d_in_{rk}",
+    d = st.text_input("    ", value=ss[f"d_{rk}"], key=f"d_in_{rk}",
                       label_visibility="collapsed", placeholder="D")
+st.markdown("</div>", unsafe_allow_html=True)
 
+# Row 3: Answer (own row, centered width)
+ac1, ac2, ac3 = st.columns([1,2,1])
+with ac2:
+    st.markdown("<div class='answrap'>", unsafe_allow_html=True)
+    ans = st.text_input("     ", value=ss[f"ans_{rk}"], key=f"ans_in_{rk}",
+                        label_visibility="collapsed", placeholder="பதில் / Answer")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# Explanation (taller)
 exp = st.text_area("      ", value=ss[f"exp_{rk}"], key=f"exp_in_{rk}", height=200,
                    label_visibility="collapsed", placeholder="விளக்கம் / Explanation")
 
@@ -284,26 +274,20 @@ def _save_current():
     merged = build_ta_text(q,a,b,c,d,ans,exp)
     ss.qc_work.at[ss.qc_idx,"QC_TA"]=merged
 
-# ---------- Buttons row (left=Save · middle=Work complete · right=Save&Next) ----------
-bL, bM, bR = st.columns([1,1,1], gap="small")
+# ------------------- Bottom buttons: ONLY two -------------------
+bL, spacer, bR = st.columns([1,1,1])
 with bL:
-    if st.button("💾 Save / சேமிக்க", use_container_width=True):
-        _save_current()
-        st.success("Saved.")
-with bM:
-    # create XLSX in memory and show an instant download button
     if st.button("✅ வேலை முடிந்தது — QC கோப்பு சேமிக்க", use_container_width=True):
         _save_current()
         buf = io.BytesIO()
         ss.qc_work.to_excel(buf, index=False)
         buf.seek(0)
-        ss.dl_buf = buf
-    if ss.dl_buf is not None:
-        st.download_button("⬇️ Download QC Excel (.xlsx)", data=ss.dl_buf,
-                           file_name="qc_verified.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        st.download_button("⬇️ QC Excel (.xlsx)", data=buf,
+                           file_name="qc_verified.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                            use_container_width=True)
 with bR:
-    if st.button("💾 Save & Next ▶ / சேமித்து அடுத்தது", use_container_width=True,
+    if st.button("▶ சேமித்து அடுத்தது / Save & Next", use_container_width=True,
                  disabled=ss.qc_idx>=len(ss.qc_work)-1):
         _save_current()
         ss.qc_idx += 1
