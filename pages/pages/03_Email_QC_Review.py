@@ -6,8 +6,9 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-st.title("📧 Email QC Generator")
-st.caption("Generate formatted email drafts to send bilingual QC files to SMEs.")
+st.set_page_config(page_title="Email QC Review", page_icon="✉️", layout="wide")
+st.title("✉️ Email QC Review")
+st.caption("View and review QC drafts for SME feedback.")
 
 # Step 1 — Upload SME Allocation File
 uploaded_file = st.file_uploader("Upload SME Allocation File (.xlsx or .csv)", type=["xlsx", "csv"])
