@@ -1,29 +1,40 @@
 # pages/03_Email_QC_Panel.py
-# SME-only single-page editor — supports upload, URL, and email deep-links
+# SME-only single-page editor — compact edit console (no preview, no A/B/C/D labels)
 import re
 import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="SME QC Panel", page_icon="📝", layout="wide", initial_sidebar_state="collapsed")
 
-# ---------- minimal chrome ----------
+# ---------- compact chrome & spacing ----------
 st.markdown("""
 <style>
+/* hide sidebar & app chrome */
 [data-testid="stSidebar"]{display:none;}
 header, footer, .stAppToolbar, [data-testid="collapsedControl"] {visibility:hidden;height:0;}
-main .block-container {padding-bottom:120px;}
+/* page padding + tighter blocks */
+main .block-container {padding-top:12px; padding-bottom:120px;}
+.box{border:1px solid #d9d9d9;border-radius:12px;padding:12px 14px;margin:8px 0}
+.box.en{background:#eaf2ff;border-color:#9cc4ff}
+.box.ta{background:#eaf7ec;border-color:#8ed39a}
+/* labels in reference blocks */
+.label{display:inline-block;background:#eef1f3;padding:2px 8px;border-radius:6px;font-size:.9rem;margin-bottom:6px}
+.hr{height:6px}
+/* sticky footer loader bar */
 .sme-footer{position:fixed;left:0;right:0;bottom:0;background:rgba(30,30,30,.96);
   border-top:1px solid #333;padding:10px 14px;z-index:9999}
 .sme-footer .wrap{max-width:1200px;margin:0 auto}
 .sme-footer label,.sme-footer p{color:#ddd!important;margin:0 0 6px 2px;font-size:.9rem}
 .sme-footer .note{color:#9ad27f!important}
-.box{border:1px solid #d9d9d9;border-radius:12px;padding:14px 16px;margin:10px 0}
-.box.en{background:#eaf2ff;border-color:#9cc4ff}
-.box.ta{background:#eaf7ec;border-color:#8ed39a}
-.box.preview{background:#fffbe6;border-color:#ffe58f}
-h4.title{margin:6px 0 8px 0}
-.label{display:inline-block;background:#eef1f3;padding:2px 8px;border-radius:6px;font-size:.9rem}
-.hr{height:8px}
+
+/* >>> Compact the editor (remove extra vertical space) */
+div[data-testid="stTextInput"]>div>label,
+div[data-testid="stTextArea"]>div>label {display:none !important;}     /* hide field labels */
+div[data-testid="stTextInput"],
+div[data-testid="stTextArea"] {margin-bottom:6px;}                      /* shrink gaps */
+
+/* slightly smaller inputs on iPad */
+input, textarea {font-size:16px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -32,7 +43,7 @@ REQ_COLS = [
     "ID",
     "Question (English)", "Options (English)", "Answer (English)", "Explanation (English)",
     "Question (Tamil)",   "Options (Tamil)",   "Answer (Tamil)",   "Explanation (Tamil)",
-    "QC_TA"  # will be created if absent
+    "QC_TA"  # will be created if missing
 ]
 
 # ---------- helpers ----------
@@ -73,7 +84,6 @@ def _clean_drive(url:str)->str:
 
 def read_from_link(url:str)->pd.DataFrame:
     url=_clean_drive(url.strip())
-    # try csv then excel
     try:
         return pd.read_csv(url)
     except Exception:
@@ -107,7 +117,6 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     for k in col_map:
         src = col_map[k]
         if src is None:
-            # allow QC_TA to be absent; create it empty later
             if k=="QC_TA":
                 out[k] = ""
                 continue
@@ -116,7 +125,6 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 def apply_subset(df: pd.DataFrame) -> pd.DataFrame:
-    # read query params (new st.query_params or experimental)
     try:
         qp = st.query_params
     except Exception:
@@ -124,13 +132,10 @@ def apply_subset(df: pd.DataFrame) -> pd.DataFrame:
     ids = qp.get("ids", [])
     rows = qp.get("rows", [])
     if ids:
-        # ids may be "1,2,3"
         id_list = re.split(r"[,\s]+", ids[0].strip())
         id_list = [x for x in id_list if x!=""]
-        # match as string OR numeric
         return df[df["ID"].astype(str).isin(id_list)].reset_index(drop=True)
     if rows:
-        # "start-end" (1-based inclusive)
         m=re.match(r"^\s*(\d+)\s*-\s*(\d+)\s*$", rows[0])
         if m:
             a,b = int(m.group(1)), int(m.group(2))
@@ -138,10 +143,9 @@ def apply_subset(df: pd.DataFrame) -> pd.DataFrame:
             return df.iloc[a-1:b].reset_index(drop=True)
     return df
 
-# ---------- session state ----------
+# ---------- session ----------
 ss=st.session_state
-for k,v in [("qc_src",pd.DataFrame()),("qc_work",pd.DataFrame()),("qc_idx",0),
-            ("link_in","")]:
+for k,v in [("qc_src",pd.DataFrame()),("qc_work",pd.DataFrame()),("qc_idx",0),("link_in","")]:
     if k not in ss: ss[k]=v
 
 # ---------- deep-link auto load ----------
@@ -155,12 +159,8 @@ if auto_file and ss.qc_work.empty:
         df = read_from_link(auto_file[0])
         df = normalize_columns(df)
         df = apply_subset(df)
-        # ensure QC_TA exists (if created above it will be empty already)
-        if "QC_TA" not in df.columns:
-            df["QC_TA"] = ""
-        ss.qc_src = df.copy()
-        ss.qc_work = df.copy()
-        ss.qc_idx = 0
+        if "QC_TA" not in df.columns: df["QC_TA"]=""
+        ss.qc_src = df.copy(); ss.qc_work = df.copy(); ss.qc_idx=0
     except Exception as e:
         st.error(str(e))
 
@@ -173,8 +173,7 @@ with t1:
 with t2:
     st.write("**…or paste a link**")
     ss.link_in = st.text_input(" ", value=ss.link_in, placeholder="https://…/file.csv or Google Drive link", label_visibility="collapsed")
-    st.markdown('<p class="note">Tip: on iPad, long-press → Paste. Use either method. '
-                'Admins can deep-link using ?file=<URL>&ids=1,2,3 or &rows=1-20</p>', unsafe_allow_html=True)
+    st.markdown('<p class="note">Email deep-link supported: ?file=<URL>&ids=153380,153381 or &rows=1-20</p>', unsafe_allow_html=True)
 with t3:
     if st.button("Load", use_container_width=True):
         try:
@@ -189,11 +188,8 @@ with t3:
                 df=read_from_link(ss.link_in)
             df = normalize_columns(df)
             df = apply_subset(df)
-            if "QC_TA" not in df.columns:
-                df["QC_TA"] = ""
-            ss.qc_src = df.copy()
-            ss.qc_work = df.copy()
-            ss.qc_idx = 0
+            if "QC_TA" not in df.columns: df["QC_TA"]=""
+            ss.qc_src = df.copy(); ss.qc_work = df.copy(); ss.qc_idx=0
             st.experimental_rerun()
         except Exception as e:
             st.error(str(e))
@@ -225,7 +221,7 @@ st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
 # ---------- reference panels ----------
 def view_block(title, q, op, ans, exp, cls):
     html = (
-        f"<span class='label'>{title}</span><br><br>"
+        f"<span class='label'>{title}</span><br>"
         f"<b>Q:</b> {_txt(q)}<br>"
         f"<b>Options (A–D):</b> {_txt(op)}<br>"
         f"<b>Answer:</b> {_txt(ans)}<br>"
@@ -238,35 +234,38 @@ ta_q,ta_op,ta_ans,ta_exp = [row[c] for c in ["Question (Tamil)","Options (Tamil)
 view_block("English Version / ஆங்கிலம்", en_q,en_op,en_ans,en_exp, "en")
 view_block("Tamil Original / தமிழ் மூலப் பதிப்பு", ta_q,ta_op,ta_ans,ta_exp, "ta")
 
-# ---------- SME Edit Console ----------
-st.markdown("<h4 class='title'>SME Edit Console / ஆசிரியர் திருத்தம்</h4>", unsafe_allow_html=True)
+# ---------- SME Edit Console (COMPACT — no preview, no A/B/C/D titles) ----------
+st.subheader("SME Edit Console / ஆசிரியர் திருத்தம்")
+
 A,B,C,D = _split_opts(ta_op)
 rk=f"r{ss.qc_idx}"
+# initialize state once
 for k,v in [(f"q_{rk}",_txt(ta_q)),(f"a_{rk}",A),(f"b_{rk}",B),(f"c_{rk}",C),(f"d_{rk}",D),
             (f"ans_{rk}",_txt(ta_ans)),(f"exp_{rk}",_txt(ta_exp))]:
     if k not in ss: ss[k]=v
 
-q = st.text_area("கேள்வி / Question (TA)", value=ss[f"q_{rk}"], key=f"q_in_{rk}", height=90)
+q = st.text_area(" ", value=ss[f"q_{rk}"], key=f"q_in_{rk}", height=90, label_visibility="collapsed", placeholder="கேள்வி / Question (TA)")
+
 c1,c2 = st.columns(2)
 with c1:
-    a = st.text_input("A", value=ss[f"a_{rk}"], key=f"a_in_{rk}")
-    c = st.text_input("C", value=ss[f"c_{rk}"], key=f"c_in_{rk}")
+    a = st.text_input(" ", value=ss[f"a_{rk}"], key=f"a_in_{rk}", label_visibility="collapsed", placeholder="Option A")
+    c = st.text_input("  ", value=ss[f"c_{rk}"], key=f"c_in_{rk}", label_visibility="collapsed", placeholder="Option C")
 with c2:
-    b = st.text_input("B", value=ss[f"b_{rk}"], key=f"b_in_{rk}")
-    d = st.text_input("D", value=ss[f"d_{rk}"], key=f"d_in_{rk}")
-ans = st.text_input("பதில் / Answer", value=ss[f"ans_{rk}"], key=f"ans_in_{rk}")
-exp = st.text_area("விளக்கம் / Explanation", value=ss[f"exp_{rk}"], key=f"exp_in_{rk}", height=120)
+    b = st.text_input("   ", value=ss[f"b_{rk}"], key=f"b_in_{rk}", label_visibility="collapsed", placeholder="Option B")
+    d = st.text_input("    ", value=ss[f"d_{rk}"], key=f"d_in_{rk}", label_visibility="collapsed", placeholder="Option D")
 
-preview = build_ta_text(q,a,b,c,d,ans,exp)
-st.markdown(f"<div class='box preview'><span class='label'>Live Preview / நேரடி முன்னோட்டம்</span><br><br>{preview}</div>", unsafe_allow_html=True)
+ans = st.text_input("     ", value=ss[f"ans_{rk}"], key=f"ans_in_{rk}", label_visibility="collapsed", placeholder="பதில் / Answer")
+exp = st.text_area("      ", value=ss[f"exp_{rk}"], key=f"exp_in_{rk}", height=120, label_visibility="collapsed", placeholder="விளக்கம் / Explanation")
+
+# Build text only when saving (no live preview)
+def _save_current():
+    merged = build_ta_text(q,a,b,c,d,ans,exp)
+    ss.qc_work.at[ss.qc_idx,"QC_TA"]=merged
 
 b1,b2 = st.columns([1,2])
 with b1:
     if st.button("💾 Save this row", use_container_width=True):
-        ss.qc_work.at[ss.qc_idx,"QC_TA"]=preview
-        st.success("Saved.")
+        _save_current(); st.success("Saved.")
 with b2:
     if st.button("💾 Save & Next ▶", use_container_width=True, disabled=ss.qc_idx>=len(ss.qc_work)-1):
-        ss.qc_work.at[ss.qc_idx,"QC_TA"]=preview
-        ss.qc_idx+=1
-        st.experimental_rerun()
+        _save_current(); ss.qc_idx+=1; st.experimental_rerun()
