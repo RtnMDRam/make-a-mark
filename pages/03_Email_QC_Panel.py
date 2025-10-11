@@ -203,7 +203,7 @@ with h3:
             ss.qc_idx-=1; st.experimental_rerun()
     with n:
         if st.button("Next ▶", use_container_width=True, disabled=ss.qc_idx>=len(ss.qc_work)-1):
-            ss.qc_idx+=1; st.experimental_rerun()
+            ss.qc_idx+=1; st.rerun()
 
 # ------------------- Reference panels -------------------
 def view_block(title, q, op, ans, exp, cls):
@@ -291,4 +291,4 @@ with bR:
                  disabled=ss.qc_idx>=len(ss.qc_work)-1):
         _save_current()
         ss.qc_idx += 1
-        st.experimental_rerun()
+        st.rerun()
