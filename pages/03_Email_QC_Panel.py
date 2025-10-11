@@ -19,16 +19,12 @@ if "qc_map" not in ss: ss.qc_map = {}
 if "qc_work" not in ss: ss.qc_work = pd.DataFrame()
 if "qc_idx" not in ss: ss.qc_idx = 0
 if "uploaded_name" not in ss: ss.uploaded_name = None
-
-# editor cache per row
 if "edit_cache" not in ss: ss.edit_cache = {}
 
 # ================= Styles =================
 st.markdown("""
 <style>
-/* shrink page padding */
 .block-container { padding-top: 0.6rem; padding-bottom: 0.6rem; }
-/* tidy boxes */
 .box { border-radius: 10px; padding: .6rem .9rem .7rem .9rem; margin: .5rem 0 0.6rem 0; border: 2px solid rgba(0,0,0,.12);}
 .box h4 { margin: 0 0 .35rem 0; font-size: .96rem; letter-spacing:.2px;}
 .box .mono { white-space: pre-wrap; line-height: 1.45; }
@@ -42,7 +38,6 @@ hr{margin:.35rem 0 .35rem 0;}
 .compact label p{margin-bottom:0}
 .sublabel{font-size:.85rem; opacity:.8; margin-bottom:.2rem;}
 .togwrap{margin: .2rem 0 .6rem 0; display:flex; gap:1rem; align-items:center;}
-/* tighter radios/inputs */
 [data-baseweb="input"]{margin:0}
 </style>
 """, unsafe_allow_html=True)
@@ -76,14 +71,13 @@ with st.expander("📥 Load bilingual file (.csv/.xlsx) & map columns", expanded
             if st.button("✅ Confirm mapping & start"):
                 ss.qc_map = dict(ID=id_col, Q_EN=q_en, OPT_EN=op_en, ANS_EN=ans_en, EXP_EN=exp_en,
                                  Q_TA=q_ta, OPT_TA=op_ta, ANS_TA=ans_ta, EXP_TA=exp_ta)
-                # working copy + QC column
                 work = ensure_work(ss.qc_src, ss.qc_map).copy()
                 if "QC_TA" not in work.columns:
                     work["QC_TA"] = ""
                 ss.qc_work = work
                 ss.qc_idx = 0
                 st.success(f"Loaded {len(work)} rows.")
-                st.experimental_rerun()
+                st.rerun()
 
 # stop if nothing yet
 if ss.qc_work.empty:
@@ -95,16 +89,13 @@ def _txt(x) -> str:
     return s.replace("\r\n","\n").strip()
 
 def split_options(raw: str):
-    """Split 'A) ... | B) ... | C) ... | D) ...' into A,B,C,D best-effort."""
     raw = _txt(raw)
     if not raw:
         return "", "", "", ""
-    # try pipe split first
     parts = [p.strip() for p in raw.split("|")]
     if len(parts) >= 4:
         A, B, C, D = (re.sub(r"^[A-D]\)?\s*[:．.、)]\s*","",p, flags=re.I) for p in parts[:4])
         return A, B, C, D
-    # fallback: split by A)/B)/C)/D)
     m = re.split(r"\bA\)\s*|\bB\)\s*|\bC\)\s*|\bD\)\s*", raw)
     if len(m) >= 5:
         return m[1].strip(), m[2].strip(), m[3].strip(), m[4].strip()
@@ -131,10 +122,10 @@ with top[1]:
     st.markdown(f"<span class='idtag'>ID: {rid}</span>", unsafe_allow_html=True)
 with top[2]:
     if st.button("◀️ Prev", use_container_width=True, disabled=ss.qc_idx==0):
-        ss.qc_idx = max(0, ss.qc_idx-1); st.experimental_rerun()
+        ss.qc_idx = max(0, ss.qc_idx-1); st.rerun()
 with top[3]:
     if st.button("Next ▶️", use_container_width=True, disabled=ss.qc_idx>=len(ss.qc_work)-1):
-        ss.qc_idx = min(len(ss.qc_work)-1, ss.qc_idx+1); st.experimental_rerun()
+        ss.qc_idx = min(len(ss.qc_work)-1, ss.qc_idx+1); st.rerun()
 
 st.progress((ss.qc_idx+1)/len(ss.qc_work))
 
@@ -177,17 +168,12 @@ apply_theme(ss.night, hide_sidebar=ss.hide_sidebar)
 # ================ SME Edit Console ================
 st.markdown("<div class='box prev'><h4>SME Edit Console / ஆசிரியர் திருத்தம்</h4></div>", unsafe_allow_html=True)
 
-# initialize per row (one time)
 row_key = f"r{ss.qc_idx}"
 if row_key not in ss.edit_cache:
     A0,B0,C0,D0 = split_options(ta_op)
-    ss.edit_cache[row_key] = dict(
-        q=ta_q, A=A0, B=B0, C=C0, D=D0, ans=ta_ans, exp=ta_exp
-    )
-
+    ss.edit_cache[row_key] = dict(q=ta_q, A=A0, B=B0, C=C0, D=D0, ans=ta_ans, exp=ta_exp)
 cache = ss.edit_cache[row_key]
 
-# fields
 q_val = st.text_area("கேள்வி", value=cache["q"], key=f"q_{row_key}", height=90)
 cA, cB = st.columns(2)
 with cA:
@@ -202,15 +188,12 @@ with cD:
 ans_val = st.text_input("பதில்", value=cache["ans"], key=f"ans_{row_key}")
 exp_val = st.text_area("விளக்கம்", value=cache["exp"], key=f"exp_{row_key}", height=120)
 
-# live preview (yellow)
 qc_live = compose_qc(q_val, A_val, B_val, C_val, D_val, ans_val, exp_val)
 st.markdown(f"<div class='box prev'><h4>Live Preview / முன்னோட்டம்</h4><div class='mono'>{qc_live}</div></div>", unsafe_allow_html=True)
 
-# actions
 bL, bR = st.columns([1.2, 1.2])
 with bL:
     if st.button("💾 Save this row", use_container_width=True):
-        # persist in working df
         if "QC_TA" not in ss.qc_work.columns:
             ss.qc_work["QC_TA"] = ""
         ss.qc_work.at[ss.qc_idx, "QC_TA"] = qc_live
@@ -223,11 +206,11 @@ with bR:
         ss.qc_work.at[ss.qc_idx, "QC_TA"] = qc_live
         ss.edit_cache[row_key] = dict(q=q_val, A=A_val, B=B_val, C=C_val, D=D_val, ans=ans_val, exp=exp_val)
         ss.qc_idx = min(len(ss.qc_work)-1, ss.qc_idx+1)
-        st.experimental_rerun()
+        st.rerun()
 
 st.divider()
 
-# ================ Export (uses your existing lib.export_qc) ================
+# ================ Export =================
 st.markdown("#### ⬇️ Export")
 xlsx_bytes, csv_bytes = export_qc(ss.qc_src, ss.qc_work, ss.qc_map)
 base = (ss.uploaded_name or "qc_file").replace(".","_")
