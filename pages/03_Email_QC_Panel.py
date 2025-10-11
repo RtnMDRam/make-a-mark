@@ -1,26 +1,37 @@
 # pages/03_Email_QC_Panel.py
-# SME QC Panel (single-screen, iPad friendly)
-# Layout: EN original • TA original • SME Edit Console (Q • A/B/C/D • Answer • Explanation)
+# SME-only QC panel (no upload/mapping). Admin must pre-load data with fixed headers.
 
 import re
 import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="SME QC Panel", page_icon="📝", layout="wide")
-
 ss = st.session_state
-# ------------ session defaults ------------
+
+# ---------------------- Session defaults ----------------------
 for k, v in {
-    "qc_src": pd.DataFrame(),
-    "qc_work": pd.DataFrame(),
-    "qc_map": {},
+    "qc_src": pd.DataFrame(),   # Admin must set this before SME uses the page
+    "qc_work": pd.DataFrame(),  # Copy of qc_src where QC_TA is written
     "qc_idx": 0,
-    "uploaded_name": None,
+    "uploaded_name": None,      # Optional: admin can set a friendly file name
 }.items():
     if k not in ss:
         ss[k] = v
 
-# ------------ helpers ------------
+# ---------------------- Fixed column map (admin responsibility) ----------------------
+REQUIRED_COLS = [
+    "ID",
+    "Question (English)",
+    "Options (English)",
+    "Answer (English)",
+    "Explanation (English)",
+    "Question (Tamil)",
+    "Options (Tamil)",
+    "Answer (Tamil)",
+    "Explanation (Tamil)",
+    "QC_TA",  # destination for SME edits
+]
+
 def _txt(x) -> str:
     if x is None:
         return ""
@@ -28,11 +39,10 @@ def _txt(x) -> str:
     return re.sub(r"\n{3,}", "\n\n", s).strip()
 
 def split_opts(text: str):
-    """Split a single string of options into A,B,C,D using common separators."""
+    """Split options into A,B,C,D using tolerant separators."""
     s = _txt(text)
     if not s:
         return ["", "", "", ""]
-    # remove labels like 1), A), 1., A., etc.
     s = re.sub(r"\s*(?:^|[|•;])\s*(?:[A-D1-4][\).:-]\s*)", " | ", s)
     parts = re.split(r"\s*\|\s*", s)
     parts = [p.strip(" .;") for p in parts if p.strip()]
@@ -43,127 +53,13 @@ def split_opts(text: str):
 def build_qc_text(q, a, b, c, d, ans, exp):
     blocks = []
     if q:  blocks.append(f"கேள்வி: {q}")
-    # join options neatly
     opts = [a, b, c, d]
     labels = ["A", "B", "C", "D"]
-    opts_str = " | ".join([f"{labels[i]}) {opts[i]}" for i in range(4) if opts[i]])
-    if opts_str:
-        blocks.append(f"விருப்பங்கள் (A–D): {opts_str}")
-    if ans:
-        blocks.append(f"பதில்: {ans}")
-    if exp:
-        blocks.append(f"விளக்கம்: {exp}")
+    opt_str = " | ".join([f"{labels[i]}) {opts[i]}" for i in range(4) if opts[i]])
+    if opt_str: blocks.append(f"விருப்பங்கள் (A–D): {opt_str}")
+    if ans: blocks.append(f"பதில்: {ans}")
+    if exp: blocks.append(f"விளக்கம்: {exp}")
     return "\n\n".join(blocks)
-
-def guess_map(cols):
-    """Best-effort mapping by header keywords."""
-    C = [c.lower() for c in cols]
-    def find(*needles):
-        for n in needles:
-            for i, c in enumerate(C):
-                if n in c:
-                    return cols[i]
-        return cols[0] if cols else ""
-    return {
-        "ID":      find("id"),
-        "Q_EN":    find("question (en", "q_en", "question en", "question english"),
-        "OPT_EN":  find("options (en", "opt_en", "options en"),
-        "ANS_EN":  find("answer (en", "ans_en", "answer en"),
-        "EXP_EN":  find("explanat", "exp_en"),
-        "Q_TA":    find("question (ta", "q_ta", "question tamil", "கேள்வ"),
-        "OPT_TA":  find("options (ta", "opt_ta", "விருப்ப"),
-        "ANS_TA":  find("answer (ta", "ans_ta", "பதில்"),
-        "EXP_TA":  find("explanat", "exp_ta", "விளக்க"),
-        "QC_TA":   "QC_TA",
-    }
-
-def ensure_qc_work(src: pd.DataFrame, mp: dict) -> pd.DataFrame:
-    """Create a working copy with a QC_TA column present."""
-    work = src.copy()
-    # Add QC_TA if missing; start with Tamil original explanation appended view
-    if mp.get("QC_TA") not in work.columns:
-        work[mp["QC_TA"]] = ""
-    return work
-
-# ------------ upload & mapping (compact) ------------
-with st.expander("📥 Load bilingual file (.csv/.xlsx) & map columns", expanded=ss.qc_src.empty):
-    up = st.file_uploader("Upload bilingual file", type=["csv", "xlsx"], label_visibility="collapsed")
-    if up:
-        if up.name.lower().endswith(".csv"):
-            src = pd.read_csv(up)
-        else:
-            src = pd.read_excel(up)
-        if src.empty:
-            st.error("File appears empty.")
-        else:
-            ss.uploaded_name = up.name.rsplit(".", 1)[0]
-            ss.qc_src = src
-            # show mapping UI
-            cols = list(src.columns)
-            auto = guess_map(cols)
-            st.caption("Map the required columns (kept exactly in export):")
-            c1, c2 = st.columns(2)
-            with c1:
-                id_col   = st.selectbox("ID", cols, index=cols.index(auto["ID"]) if auto["ID"] in cols else 0, key="m_id")
-                q_en     = st.selectbox("Question (English)", cols, index=cols.index(auto["Q_EN"]) if auto["Q_EN"] in cols else 0, key="m_q_en")
-                opt_en   = st.selectbox("Options (English)",  cols, index=cols.index(auto["OPT_EN"]) if auto["OPT_EN"] in cols else 0, key="m_opt_en")
-                ans_en   = st.selectbox("Answer (English)",   cols, index=cols.index(auto["ANS_EN"]) if auto["ANS_EN"] in cols else 0, key="m_ans_en")
-                exp_en   = st.selectbox("Explanation (English)", cols, index=cols.index(auto["EXP_EN"]) if auto["EXP_EN"] in cols else 0, key="m_exp_en")
-            with c2:
-                q_ta     = st.selectbox("Question (Tamil)", cols, index=cols.index(auto["Q_TA"]) if auto["Q_TA"] in cols else 0, key="m_q_ta")
-                opt_ta   = st.selectbox("Options (Tamil)",  cols, index=cols.index(auto["OPT_TA"]) if auto["OPT_TA"] in cols else 0, key="m_opt_ta")
-                ans_ta   = st.selectbox("Answer (Tamil)",   cols, index=cols.index(auto["ANS_TA"]) if auto["ANS_TA"] in cols else 0, key="m_ans_ta")
-                exp_ta   = st.selectbox("Explanation (Tamil)", cols, index=cols.index(auto["EXP_TA"]) if auto["EXP_TA"] in cols else 0, key="m_exp_ta")
-                qc_ta    = st.selectbox("QC Verified (Tamil) — stores SME edits", cols + ["QC_TA"], index=(cols + ["QC_TA"]).index(auto["QC_TA"]) if auto["QC_TA"] in (cols + ["QC_TA"]) else len(cols), key="m_qc_ta")
-
-            if st.button("✅ Confirm mapping & start"):
-                ss.qc_map = {
-                    "ID": id_col, "Q_EN": q_en, "OPT_EN": opt_en, "ANS_EN": ans_en, "EXP_EN": exp_en,
-                    "Q_TA": q_ta, "OPT_TA": opt_ta, "ANS_TA": ans_ta, "EXP_TA": exp_ta, "QC_TA": qc_ta
-                }
-                ss.qc_work = ensure_qc_work(ss.qc_src, ss.qc_map)
-                ss.qc_idx = 0
-                st.success(f"Loaded {len(ss.qc_work)} rows.")
-                st.rerun()
-
-# stop if nothing loaded yet
-if ss.qc_work.empty:
-    st.stop()
-
-# ------------ top strip (slim) ------------
-row = ss.qc_work.iloc[ss.qc_idx]
-rid = row[ss.qc_map["ID"]] if ss.qc_map["ID"] in row else ss.qc_idx + 1
-hdr_left, hdr_mid, hdr_right = st.columns([2,6,2])
-with hdr_left:
-    st.markdown("### 📝 SME QC Panel")
-    st.caption("English ⇄ Tamil · single-page QC")
-with hdr_mid:
-    st.caption(f"ID: **{rid}** · Row **{ss.qc_idx+1} / {len(ss.qc_work)}**")
-    st.progress((ss.qc_idx + 1) / len(ss.qc_work))
-with hdr_right:
-    cA, cB = st.columns(2)
-    with cA:
-        if st.button("◀ Prev", use_container_width=True, disabled=ss.qc_idx <= 0):
-            ss.qc_idx = max(0, ss.qc_idx - 1); st.rerun()
-    with cB:
-        if st.button("Next ▶", use_container_width=True, disabled=ss.qc_idx >= len(ss.qc_work) - 1):
-            ss.qc_idx = min(len(ss.qc_work) - 1, ss.qc_idx + 1); st.rerun()
-
-st.divider()
-
-# ------------ reference panels ------------
-m = ss.qc_map
-# English pieces
-en_q   = _txt(row.get(m["Q_EN"], ""))
-en_op  = _txt(row.get(m["OPT_EN"], ""))
-en_ans = _txt(row.get(m["ANS_EN"], ""))
-en_exp = _txt(row.get(m["EXP_EN"], ""))
-
-# Tamil pieces
-ta_q   = _txt(row.get(m["Q_TA"], ""))
-ta_op  = _txt(row.get(m["OPT_TA"], ""))
-ta_ans = _txt(row.get(m["ANS_TA"], ""))
-ta_exp = _txt(row.get(m["EXP_TA"], ""))
 
 def block(title, body, css):
     st.markdown(
@@ -172,7 +68,8 @@ def block(title, body, css):
             <div class="head">{title}</div>
             <div class="body">{body}</div>
         </div>
-        """, unsafe_allow_html=True
+        """,
+        unsafe_allow_html=True
     )
 
 def render_en(q, op, ans, exp):
@@ -191,14 +88,76 @@ def render_ta(q, op, ans, exp):
     if exp: parts.append(f"<b>விளக்கம்:</b> {exp}")
     return "<br><br>".join(parts) or "—"
 
-block("English Version / ஆங்கிலம்", render_en(en_q, en_op, en_ans, en_exp), "en")
-block("Tamil Original / தமிழ் மூலப் பதிப்பு", render_ta(ta_q, ta_op, ta_ans, ta_exp), "ta")
+# ---------------------- Admin-prepared data required ----------------------
+if ss.qc_src.empty:
+    st.markdown("### 📝 SME QC Panel")
+    st.info(
+        "இந்த பக்கம் ஆசிரியர்களுக்கான எளிய QC திருத்தப் பகுதி. "
+        "தரவை **நிர்வாகம் (Admin)** முன்கூட்டியே ஏற்றியிருக்க வேண்டும்.\n\n"
+        "Admins: provide a DataFrame in `st.session_state.qc_src` that contains columns:\n"
+        f"`{', '.join(REQUIRED_COLS)}`.\n"
+        "Once the admin loads it, this page will show the items automatically."
+    )
+    st.stop()
 
-# ------------ SME EDIT CONSOLE ------------
-st.markdown("""<div class="box edit"><div class="head">SME Edit Console / ஆசிரியர் திருத்தம்</div></div>""", unsafe_allow_html=True)
+# Validate required columns once (SME sees a friendly message if admin misconfigured)
+missing = [c for c in REQUIRED_COLS if c not in ss.qc_src.columns]
+if missing:
+    st.error(
+        "Admin setup incomplete. Missing columns: " + ", ".join(missing) +
+        ". Please ask Admin to fix the source file."
+    )
+    st.stop()
 
-row_key = f"r{ss.qc_idx}"  # stable per row
-# initialize per-row default values from Tamil original
+# Create working copy if needed
+if ss.qc_work.empty:
+    ss.qc_work = ss.qc_src.copy()
+
+# ---------------------- Top strip (slim) ----------------------
+row = ss.qc_work.iloc[ss.qc_idx]
+rid = row["ID"]
+
+hdr_left, hdr_mid, hdr_right = st.columns([2,6,2])
+with hdr_left:
+    st.markdown("### 📝 SME QC Panel")
+    st.caption("English ⇄ Tamil · single-page QC (SME only)")
+with hdr_mid:
+    st.caption(f"ID: **{rid}** · Row **{ss.qc_idx+1} / {len(ss.qc_work)}**")
+    st.progress((ss.qc_idx + 1) / len(ss.qc_work))
+with hdr_right:
+    cA, cB = st.columns(2)
+    with cA:
+        if st.button("◀ Prev", use_container_width=True, disabled=ss.qc_idx <= 0):
+            ss.qc_idx = max(0, ss.qc_idx - 1); st.rerun()
+    with cB:
+        if st.button("Next ▶", use_container_width=True, disabled=ss.qc_idx >= len(ss.qc_work) - 1):
+            ss.qc_idx = min(len(ss.qc_work) - 1, ss.qc_idx + 1); st.rerun()
+
+st.divider()
+
+# ---------------------- Reference panels ----------------------
+en_q   = _txt(row["Question (English)"])
+en_op  = _txt(row["Options (English)"])
+en_ans = _txt(row["Answer (English)"])
+en_exp = _txt(row["Explanation (English)"])
+
+ta_q   = _txt(row["Question (Tamil)"])
+ta_op  = _txt(row["Options (Tamil)"])
+ta_ans = _txt(row["Answer (Tamil)"])
+ta_exp = _txt(row["Explanation (Tamil)"])
+
+block("English Version / ஆங்கிலம்",
+      render_en(en_q, en_op, en_ans, en_exp), "en")
+block("Tamil Original / தமிழ் மூலப் பதிப்பு",
+      render_ta(ta_q, ta_op, ta_ans, ta_exp), "ta")
+
+# ---------------------- SME EDIT CONSOLE ----------------------
+st.markdown(
+    """<div class="box edit"><div class="head">SME Edit Console / ஆசிரியர் திருத்தம்</div></div>""",
+    unsafe_allow_html=True
+)
+
+row_key = f"r{ss.qc_idx}"
 A, B, C, D = split_opts(ta_op)
 defaults = {
     f"q_{row_key}": ta_q,
@@ -213,7 +172,6 @@ for k, v in defaults.items():
     if k not in ss:
         ss[k] = v
 
-# inputs (always provide a default so Streamlit doesn't error)
 q_val   = st.text_area("கேள்வி / Question (TA)", value=ss[f"q_{row_key}"], height=90, key=f"q_{row_key}_in")
 colA, colB = st.columns(2)
 with colA:
@@ -228,28 +186,27 @@ with colD:
 ans_val = st.text_input("பதில்", value=ss[f"ans_{row_key}"], key=f"ans_{row_key}_in")
 exp_val = st.text_area("விளக்கம்", value=ss[f"exp_{row_key}"], height=120, key=f"exp_{row_key}_in")
 
-# live preview of QC text (mirrors current inputs)
-preview = build_qc_text(q_val, A_val, B_val, C_val, D_val, ans_val, exp_val)
-block("Live Preview / நேரடி முன்னோட்டம் (QC)", render_ta(q_val, " | ".join([f"A) {A_val}", f"B) {B_val}", f"C) {C_val}", f"D) {D_val}"]), ans_val, exp_val), "qc")
+# Live preview
+opts_preview = " | ".join([f"A) {A_val}", f"B) {B_val}", f"C) {C_val}", f"D) {D_val}"])
+block("Live Preview / நேரடி முன்னோட்டம்",
+      render_ta(q_val, opts_preview, ans_val, exp_val), "qc")
 
-# buttons
+# Save buttons
 bL, bR = st.columns([1,2])
 with bL:
     if st.button("💾 Save this row", use_container_width=True):
-        # write back to qc_work (QC_TA holds SME-edited text)
-        ss.qc_work.at[ss.qc_idx, m["QC_TA"]] = preview
+        ss.qc_work.at[ss.qc_idx, "QC_TA"] = build_qc_text(q_val, A_val, B_val, C_val, D_val, ans_val, exp_val)
         st.success("Saved.")
 with bR:
     if st.button("💾 Save & Next ▶", use_container_width=True, disabled=ss.qc_idx >= len(ss.qc_work) - 1):
-        ss.qc_work.at[ss.qc_idx, m["QC_TA"]] = preview
+        ss.qc_work.at[ss.qc_idx, "QC_TA"] = build_qc_text(q_val, A_val, B_val, C_val, D_val, ans_val, exp_val)
         if ss.qc_idx < len(ss.qc_work) - 1:
             ss.qc_idx += 1
         st.rerun()
 
-st.divider()
-st.caption("Tip: Top two panels are read-only references. Edit only in the SME console. Saving writes to the **QC_TA** column.")
+st.caption("SME only edits the bottom console. Admin handles files and headers.")
 
-# ------------ minimal CSS ------------
+# ---------------------- Minimal CSS ----------------------
 st.markdown("""
 <style>
 .box{border:1px solid #d9d9d9;border-radius:10px;padding:14px 16px;margin:8px 0}
