@@ -1,6 +1,5 @@
 # pages/03_Email_QC_Panel.py
-# Super-compact SME console: 6 rows, options = grid, vocab+answer inside grid,
-# no bottom slack, no experimental_rerun.
+# SME compact editor v2 — 6 rows, tighter grid, no bottom slack.
 
 import io, re
 import pandas as pd
@@ -8,55 +7,52 @@ import streamlit as st
 
 st.set_page_config(page_title="SME QC Panel", page_icon="📝", layout="wide", initial_sidebar_state="collapsed")
 
-# ----------------- CSS: ruthless compaction -----------------
+# ----------------- CSS: extra compaction -----------------
 st.markdown("""
 <style>
-/* Hide sidebar + chrome */
+/* Hide sidebar & chrome */
 [data-testid="stSidebar"]{display:none;}
 header, footer, .stAppToolbar, [data-testid="collapsedControl"]{visibility:hidden;height:0;}
-
-/* Tighter global paddings */
-main .block-container{padding:8px 10px 6px;}
-/* Remove default element bottom gaps */
-.block-container div[data-testid="stVerticalBlock"] > div:has(> .element-container){margin-bottom:4px;}
+/* Global paddings and element gaps */
+main .block-container{padding:8px 10px 4px;}
 .element-container{margin-bottom:4px;}
-/* Inputs compact */
-div[data-testid="stTextInput"]>div>label,
-div[data-testid="stTextArea"]>div>label{display:none !important;}
-input, textarea{font-size:16px;}
-/* Question/Explanation heights */
-.qbox textarea{height:60px !important;}
-.expbox textarea{height:132px !important;}
+/* Remove any horizontal rules / separators that sneak in */
+hr, div[role="separator"]{display:none !important;height:0 !important;margin:0 !important;}
 
-/* Options grid wrapper */
-.gridwrap{border:1px solid #c9c9c9;border-radius:10px;padding:6px 8px;margin:4px 0;}
-.optrow{margin:0}
-.optrow .stColumn{padding-left:4px !important;padding-right:4px !important;}
-.optrow input{height:34px !important;}
+/* Inputs typography & size */
+input, textarea{font-size:15px; line-height:1.2;}
+/* Question / Explanation heights */
+.qbox textarea{height:52px !important; padding-top:6px !important; padding-bottom:6px !important;}
+.expbox textarea{height:120px !important; padding-top:6px !important; padding-bottom:6px !important;}
 
-/* Vocab+Answer row inside grid */
-.vrow .stColumn{padding-left:4px !important;padding-right:4px !important;}
-.vrow input{height:34px !important;}
-.vbtn button{padding:4px 10px; height:34px;}
+/* Grid wrapper: super tight */
+.gridwrap{border:1px solid #cfcfcf;border-radius:8px;padding:4px 6px;margin:4px 0;}
+.optrow .stColumn, .vrow .stColumn{padding-left:4px !important;padding-right:4px !important;}
+/* Short input boxes for options/vocab/answer */
+.optrow input, .vrow input{height:30px !important; padding:3px 8px !important;}
 
-/* Buttons row (no extra bottom) */
-.btrow .stColumn{padding-left:6px !important;padding-right:6px !important;}
-.btrow button{padding:8px 10px;}
-/* Remove trailing space under last block */
-section.main > div.block-container > div:last-child{margin-bottom:0 !important; padding-bottom:0 !important;}
+/* Vocab row: make "Go" hug the field */
+.vflex{display:flex; gap:6px; align-items:center;}
+.vbtn button{height:30px; padding:2px 10px;}
 
 /* Reference panels (kept) */
-.box{border:1px solid #d9d9d9;border-radius:12px;padding:10px 12px;margin:6px 0}
+.box{border:1px solid #d9d9d9;border-radius:10px;padding:10px 12px;margin:6px 0}
 .box.en{background:#eaf2ff;border-color:#9cc4ff}
 .box.ta{background:#eaf7ec;border-color:#8ed39a}
 .label{display:inline-block;background:#eef1f3;padding:2px 8px;border-radius:6px;font-size:.9rem}
 
-/* Keep edit console to ≈45% viewport so English/Tamil fit above */
-#smeWrap{max-height:45vh;}
+/* Edit console height target: more room for English/Tamil above */
+#smeWrap{max-height:42vh;}
+
+/* Button row: small paddings & no trailing space */
+.btrow .stColumn{padding-left:6px !important;padding-right:6px !important;}
+.btrow button{padding:8px 10px;}
+/* Remove any leftover space at the very end */
+section.main > div.block-container > div:last-child{margin-bottom:0 !important; padding-bottom:0 !important;}
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------- required cols -----------------
+# ----------------- required columns -----------------
 REQ_COLS = [
     "ID",
     "Question (English)", "Options (English)", "Answer (English)", "Explanation (English)",
@@ -65,7 +61,7 @@ REQ_COLS = [
 ]
 
 # ----------------- helpers -----------------
-def _txt(v): 
+def _txt(v):
     if pd.isna(v): return ""
     return str(v).replace("\r\n","\n").strip()
 
@@ -192,7 +188,7 @@ if ss.qc_work.empty:
                 st.error(str(e))
     st.stop()
 
-# ----------------- top (minimal) -----------------
+# ----------------- top (minimal header) -----------------
 row = ss.qc_work.iloc[ss.qc_idx]; rid=row["ID"]
 h1,h2,h3 = st.columns((2,4,2))
 with h1: st.markdown("## 📝 SME QC Panel")
@@ -225,7 +221,7 @@ view_block("Tamil Original / தமிழ் மூலப் பதிப்ப�
 
 # ----------------- SME Edit Console (exactly 6 rows) -----------------
 st.markdown(
-    "<div style='text-align:center;font-weight:600;font-size:20px;'>SME Edit Console / ஆசிரியர் திருத்தம்</div>",
+    "<div style='text-align:center;font-weight:600;font-size:19px;margin-top:2px;'>SME Edit Console / ஆசிரியர் திருத்தம்</div>",
     unsafe_allow_html=True
 )
 st.markdown("<div id='smeWrap'>", unsafe_allow_html=True)
@@ -235,44 +231,43 @@ rk=str(ss.qc_idx)
 for k,v in [(f"q_{rk}",_txt(ta_q)),(f"a_{rk}",_txt(A)),(f"b_{rk}",_txt(B)),(f"c_{rk}",_txt(C)),(f"d_{rk}",_txt(D)),(f"ans_{rk}",_txt(ta_ans)),(f"exp_{rk}",_txt(ta_exp))]:
     if k not in ss: ss[k]=v
 
-# Row 1: Q
+# Row 1: Question (short)
 st.markdown("<div class='qbox'>", unsafe_allow_html=True)
 q = st.text_area(" ", value=ss[f"q_{rk}"], key=f"q_in_{rk}", label_visibility="collapsed", placeholder="கேள்வி / Question (TA)")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Row 2-3-4 inside a SINGLE grid wrapper to kill gaps:
+# Rows 2–4: single tight wrapper = two rows of options + vocab/answer row
 st.markdown("<div class='gridwrap'>", unsafe_allow_html=True)
 
 # Row 2: A | B
-r2c1, r2c2 = st.columns(2)
+r2c1, r2c2 = st.columns(2, gap="small")
 with r2c1:
     a = st.text_input(" ", value=ss[f"a_{rk}"], key=f"a_in_{rk}", label_visibility="collapsed", placeholder="A")
 with r2c2:
     b = st.text_input(" ", value=ss[f"b_{rk}"], key=f"b_in_{rk}", label_visibility="collapsed", placeholder="B")
 
 # Row 3: C | D
-r3c1, r3c2 = st.columns(2)
+r3c1, r3c2 = st.columns(2, gap="small")
 with r3c1:
     c = st.text_input(" ", value=ss[f"c_{rk}"], key=f"c_in_{rk}", label_visibility="collapsed", placeholder="C")
 with r3c2:
     d = st.text_input(" ", value=ss[f"d_{rk}"], key=f"d_in_{rk}", label_visibility="collapsed", placeholder="D")
 
-# Row 4 (inside same wrapper): Vocabulary+Go | Answer
-vL, vR = st.columns(2)
+# Row 4: (left) Go + Vocab | (right) Answer — with no labels, only placeholders
+vL, vR = st.columns(2, gap="small")
 with vL:
-    st.caption("Groceries / Vocabulary")
-    g1,g2 = st.columns((1,5))
-    with g1:
-        st.button("Go", key=f"v_go_{rk}", use_container_width=True, help="(stub)", type="secondary")
-    with g2:
-        st.text_input(" ", key=f"vocab_{rk}", value="", label_visibility="collapsed", placeholder="Type word")
+    st.markdown("<div class='vflex'>", unsafe_allow_html=True)
+    st.markdown("<span class='vbtn'>", unsafe_allow_html=True)
+    st.button("Go", key=f"v_go_{rk}", use_container_width=False, type="secondary")
+    st.markdown("</span>", unsafe_allow_html=True)
+    st.text_input(" ", key=f"vocab_{rk}", value="", label_visibility="collapsed", placeholder="Groceries / Vocabulary")
+    st.markdown("</div>", unsafe_allow_html=True)
 with vR:
-    st.caption("பதில் / Answer")
-    ans = st.text_input(" ", value=ss[f"ans_{rk}"], key=f"ans_in_{rk}", label_visibility="collapsed", placeholder="Answer")
+    ans = st.text_input(" ", value=ss[f"ans_{rk}"], key=f"ans_in_{rk}", label_visibility="collapsed", placeholder="பதில் / Answer")
 
-st.markdown("</div>", unsafe_allow_html=True)  # end gridwrap
+st.markdown("</div>", unsafe_allow_html=True)
 
-# Row 5: Explanation
+# Row 5: Explanation (shorter)
 st.markdown("<div class='expbox'>", unsafe_allow_html=True)
 exp = st.text_area(" ", value=ss[f"exp_{rk}"], key=f"exp_in_{rk}", label_visibility="collapsed", placeholder="விளக்கம் / Explanation")
 st.markdown("</div>", unsafe_allow_html=True)
@@ -281,7 +276,7 @@ def _save_current():
     merged = build_ta_text(q,a,b,c,d,ans,exp)
     ss.qc_work.at[ss.qc_idx,"QC_TA"]=merged
 
-# Row 6: Buttons (no extra bottom)
+# Row 6: Buttons — minimal vertical footprint
 bL,bC,bR = st.columns((1,1,1), gap="small")
 with bL:
     if st.button("💾 Save", use_container_width=True):
