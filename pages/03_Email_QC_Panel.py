@@ -105,7 +105,6 @@ with mode_right:
 cols_map = step_columns(ss.qc_step)
 
 # ---------- Vocabulary panel ----------
-from lib.glossary import render_matches
 g_html = render_matches(ss.glossary, ss.vocab_query)
 st.markdown(f"<div class='box gloss'><h4>Vocabulary / சொற்க்களஞ்சியம்</h4><div class='fine'>{g_html}</div></div>", unsafe_allow_html=True)
 
