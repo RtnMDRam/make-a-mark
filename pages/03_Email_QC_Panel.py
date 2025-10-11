@@ -1,86 +1,54 @@
 # pages/03_Email_QC_Panel.py
-# SME QC panel: Sidebar Glossary + English(RO) + Tamil Original(RO) + QC Verified (saved) + SME Edit (live)
-# - Preserves input headers & column order on export
-# - iPad-friendly layout, Night Mode, Clean View (hide sidebar), Prev/Next, Save & Export
+# SME QC Panel — single page, compact iPad layout:
+# Header (5%) · Originals (EN, TA) · Edit console (TA question, options A–D, answer, explanation)
 
-import streamlit as st
+import io, os, re
 import pandas as pd
+import streamlit as st
 
-# ---- our modular helpers (you already created these in lib/) ----
-from lib import (
-    apply_theme,            # theme & CSS + clean view
-    read_bilingual,         # csv/xlsx -> DataFrame (header row preserved)
-    export_qc,              # build xlsx/csv bytes with source headers + QC values
-    auto_guess_map,         # guess columns
-    ensure_work,            # make working copy & QC_* columns
-    step_columns,           # map by step (kept for future, but we show all in yellow)
-    render_matches,         # glossary search -> html
-    sort_glossary,          # glossary sort
-)
+# ---- modular helpers ----
+from lib import apply_theme, read_bilingual, export_qc, auto_guess_map, ensure_work
 
+# ---------- Page + CSS ----------
 st.set_page_config(page_title="SME QC Panel", page_icon="📝", layout="wide")
-st.title("📝 SME QC Panel")
+
+# minimal chrome + hide sidebar, tighten paddings
+st.markdown("""
+<style>
+/* remove default top padding & make content full width */
+.main .block-container { padding-top: 0.6rem; padding-bottom: 0.6rem; max-width: 1200px; }
+section[data-testid="stSidebar"] { display: none !important; }  /* hide left app menu */
+header[data-testid="stHeader"] { height: 0; visibility: hidden; } /* hide Streamlit header bar */
+.small { font-size:0.85rem; opacity:.8 }
+.tag { display:inline-block; padding:.25rem .55rem; border-radius:.5rem; background:#eef1f6; border:1px solid #d7dbe4; font-weight:600; }
+.hdr { display:flex; gap:.75rem; align-items:center; justify-content:space-between; border-bottom:1px solid #e6e6e6; padding:.4rem 0 .6rem 0; }
+.hstack { display:flex; gap:.5rem; align-items:center; }
+.panel { border:1px solid #d7dbe4; border-radius:.6rem; padding:.6rem .8rem; margin:.4rem 0; }
+.panel.en { background:#edf4ff; }
+.panel.ta { background:#eaf7ea; }
+.panel.edit { background:#fff7ea; border-color:#f1d79b; }
+.label { font-weight:700; margin-bottom:.35rem; }
+.mono { white-space:pre-wrap; word-break:break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.scroll { max-height: 28vh; overflow:auto; }
+.scroll-half { max-height: 22vh; overflow:auto; }
+.rowgap { display:grid; grid-template-columns: 1fr 1fr; gap:.6rem; }
+.tip { font-size:.85rem; opacity:.85; }
+.btnrow { display:flex; gap:.6rem; align-items:center; }
+</style>
+""", unsafe_allow_html=True)
 
 # ---------- Session ----------
 ss = st.session_state
 if "night" not in ss: ss.night = False
-if "clean" not in ss: ss.clean = True          # hide sidebar by default for SMEs
 if "qc_src" not in ss: ss.qc_src = pd.DataFrame()
 if "qc_map" not in ss: ss.qc_map = {}
 if "qc_work" not in ss: ss.qc_work = pd.DataFrame()
 if "qc_idx" not in ss: ss.qc_idx = 0
-if "qc_step" not in ss: ss.qc_step = "Question"
-if "glossary" not in ss: ss.glossary = []
-if "vocab_query" not in ss: ss.vocab_query = ""
 if "uploaded_name" not in ss: ss.uploaded_name = None
 
-# ---------- Small helpers ----------
-def _split_opts(s: str):
-    """Return a list of 4 option lines from a single text field."""
-    lines = [ln.strip() for ln in str(s or "").replace("\r\n","\n").split("\n")]
-    lines = [ln for ln in lines if ln]
-    while len(lines) < 4:
-        lines.append("")
-    return lines[:4]
+apply_theme(ss.night, hide_sidebar=True)
 
-def _join_opts(lines):
-    """Join 4 lines into one multiline string for storage."""
-    return "\n".join((lines or [])[:4])
-
-def _clean_lines(s: str) -> str:
-    return (s or "").replace("\r\n", "\n").replace("\n", "<br>")
-
-def _qc_preview_text(q, opts4, ans, exp):
-    parts = []
-    if q:    parts.append(str(q))
-    if opts4 and any(opts4):
-        parts.append("விருப்பங்கள் (A–D):")
-        parts.extend([str(x) for x in opts4])
-    if ans:  parts.append(f"பதில்: {ans}")
-    if exp:  parts.append("விளக்கம்:\n" + str(exp))
-    return "\n\n".join(parts)
-
-def _panel(title, color_class, html):
-    st.markdown(
-        f"<div class='box {color_class}'><h4>{title}</h4><div class='mono'>{html}</div></div>",
-        unsafe_allow_html=True
-    )
-
-# ---------- Header controls ----------
-hdr_left, hdr_mid, hdr_right = st.columns([2,4,2])
-with hdr_left:
-    st.caption("iPad-friendly layout · preserves headers")
-with hdr_right:
-    c1, c2 = st.columns(2)
-    with c1:
-        ss.night = st.toggle("🌙 Night", value=ss.night)
-    with c2:
-        ss.clean = st.toggle("🧼 Clean view", value=ss.clean, help="Hide left app menu")
-
-# apply theme + hide sidebar if clean
-apply_theme(ss.night, hide_sidebar=ss.clean)
-
-# ---------- Upload + map ----------
+# ---------- Upload + map (one-time) ----------
 with st.expander("📥 Load bilingual file (.csv/.xlsx) & map columns", expanded=ss.qc_src.empty):
     up = st.file_uploader("Upload bilingual file", type=["csv","xlsx"])
     if up:
@@ -91,7 +59,7 @@ with st.expander("📥 Load bilingual file (.csv/.xlsx) & map columns", expanded
             ss.uploaded_name = up.name.rsplit(".",1)[0]
             ss.qc_src = src
             auto = auto_guess_map(src)
-            st.write("**Map the required columns (kept exactly in export):**")
+            st.write("**Map required columns** (kept exactly in export):")
             cols = list(src.columns)
 
             sel = {}
@@ -107,133 +75,147 @@ with st.expander("📥 Load bilingual file (.csv/.xlsx) & map columns", expanded
                 sel["OPT_TA"] = st.selectbox("Options (Tamil)",   cols, index=cols.index(auto["OPT_TA"]) if auto["OPT_TA"] in cols else 0)
                 sel["ANS_TA"] = st.selectbox("Answer (Tamil)",    cols, index=cols.index(auto["ANS_TA"]) if auto["ANS_TA"] in cols else 0)
                 sel["EXP_TA"] = st.selectbox("Explanation (Tamil)", cols, index=cols.index(auto["EXP_TA"]) if auto["EXP_TA"] in cols else 0)
+                # QC output column (create if missing)
+                qc_choices = cols + ["<create new column ‘QC_TA’>"]
+                qc_pick = st.selectbox("QC Verified (Tamil) → save into", qc_choices,
+                                       index=(qc_choices.index("QC_TA") if "QC_TA" in cols else len(qc_choices)-1))
+                if qc_pick == "<create new column ‘QC_TA’>":
+                    sel["QC_TA"] = "QC_TA"
+                else:
+                    sel["QC_TA"] = qc_pick
 
             if st.button("✅ Confirm mapping & start QC"):
-                ss.qc_map  = sel
-                ss.qc_work = ensure_work(ss.qc_src, ss.qc_map)  # creates QC_Q_TA, QC_OPT_TA, QC_ANS_TA, QC_EXP_TA
-                ss.qc_idx  = 0
-                st.success(f"Loaded {len(ss.qc_work)} rows. Headers will be preserved in exports.")
+                ss.qc_map = sel
+                ss.qc_work = ensure_work(ss.qc_src, ss.qc_map)
+                if sel["QC_TA"] not in ss.qc_work.columns:
+                    ss.qc_work[sel["QC_TA"]] = ""
+                ss.qc_idx = 0
+                st.success(f"Loaded {len(ss.qc_work)} rows. Headers preserved in exports.")
                 st.rerun()
 
 if ss.qc_work.empty:
     st.stop()
 
-# ---------- Sidebar: Vocabulary (collapsible, keeps main page clean) ----------
-with st.sidebar:
-    st.subheader("🗂️ Vocabulary / சொற்க்களஞ்சியம்")
-    # quick search
-    ss.vocab_query = st.text_input("🔎 Search English", value=ss.vocab_query)
-    st.markdown(render_matches(ss.glossary, ss.vocab_query), unsafe_allow_html=True)
-    with st.expander("➕ Add term"):
-        ven = st.text_input("English", key="ven_add")
-        vta = st.text_input("Tamil",   key="vta_add")
-        if st.button("Add to glossary"):
-            if ven.strip() and vta.strip():
-                ss.glossary.append({"en": ven.strip(), "ta": vta.strip()})
-                ss.vocab_query = ven.strip()
-                st.success("Added.")
-            else:
-                st.warning("Enter both English and Tamil.")
-
-# ---------- Navigation ----------
+# convenience
+M = ss.qc_map
 row = ss.qc_work.iloc[ss.qc_idx]
-nav1, nav2, nav3, nav4 = st.columns([1,2.4,4,1])
-with nav1:
-    if st.button("◀️ Prev", use_container_width=True, disabled=ss.qc_idx<=0):
-        ss.qc_idx = max(0, ss.qc_idx-1); st.rerun()
-with nav2:
-    rid = row["ID"]
-    st.markdown(f"<div class='idtag'>ID: {rid}</div>", unsafe_allow_html=True)
-with nav3:
-    st.progress((ss.qc_idx+1)/len(ss.qc_work))
-    st.caption(f"Row {ss.qc_idx+1} / {len(ss.qc_work)}")
-with nav4:
-    if st.button("Next ▶️", use_container_width=True, disabled=ss.qc_idx>=len(ss.qc_work)-1):
-        ss.qc_idx = min(len(ss.qc_work)-1, ss.qc_idx+1); st.rerun()
 
-# Keep step mapping for English/Tamil read-only panels (teacher can still switch focus if needed)
-ss.qc_step = st.radio("Step", ["Question","Options","Answer","Explanation"],
-                      index=["Question","Options","Answer","Explanation"].index(ss.qc_step),
-                      horizontal=True)
+def _as_text(x) -> str:
+    return "" if pd.isna(x) else str(x)
 
-cols_map = step_columns(ss.qc_step)  # {'EN':..., 'TA':..., 'QC':...} — EN/TA change with step; QC we show full below
+def _split_opts(s: str):
+    """Split options on | or newline. Returns list of 4 strings (padded)."""
+    raw = [t.strip() for t in re.split(r"\||\n", _as_text(s)) if t.strip()!=""]
+    while len(raw) < 4:
+        raw.append("")
+    return raw[:4]
 
-# ---------- Read-only panels (English & Tamil Original) ----------
-_panel("English Version / ஆங்கில பதிப்பு", "en",  _clean_lines(row[cols_map["EN"]]))
-_panel("Tamil Version / தமிழ் பதிப்பு",    "tao", _clean_lines(row[cols_map["TA"]]))
+# ---------- HEADER (5%) ----------
+with st.container():
+    st.markdown("<div class='hdr'>", unsafe_allow_html=True)
+    left, mid, right = st.columns([2.2,5,3])
+    with left:
+        st.markdown("<span class='tag'>📝 SME QC Panel</span>", unsafe_allow_html=True)
+        st.caption("English ↔ Tamil · single-page QC")
+    with mid:
+        progress = (ss.qc_idx+1)/len(ss.qc_work)
+        st.progress(progress)
+        st.caption(f"ID: {_as_text(row[M['ID']])} · Row {ss.qc_idx+1} / {len(ss.qc_work)}")
+    with right:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("◀︎ Prev", use_container_width=True, disabled=ss.qc_idx<=0):
+                ss.qc_idx = max(0, ss.qc_idx-1); st.rerun()
+        with c2:
+            if st.button("Next ▶︎", use_container_width=True, disabled=ss.qc_idx>=len(ss.qc_work)-1):
+                ss.qc_idx = min(len(ss.qc_work)-1, ss.qc_idx+1); st.rerun()
+        with c3:
+            # quick export (enabled once we’ve saved at least once)
+            xbytes, cbytes = export_qc(ss.qc_src, ss.qc_work, ss.qc_map)
+            base = (ss.uploaded_name or "qc_file").replace(".","_")
+            st.download_button("⬇️ Excel", data=xbytes,
+                file_name=f"{base}_qc_verified.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                disabled=(xbytes is None), use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------- SME QC Verified (Red: last saved) + SME Edit (Yellow: live) ----------
-# Column keys inside the working df
-q_col, opt_col, ans_col, exp_col = "Q_TA", "OPT_TA", "ANS_TA", "EXP_TA"
-qc_q, qc_opt, qc_ans, qc_exp     = "QC_Q_TA", "QC_OPT_TA", "QC_ANS_TA", "QC_EXP_TA"
+# ---------- ORIGINALS ZONE (compact, 50% total: EN ~25%, TA ~25%) ----------
+en_q  = _as_text(row[M["Q_EN"]])
+en_op = _as_text(row[M["OPT_EN"]])
+en_ans= _as_text(row[M["ANS_EN"]])
+en_ex = _as_text(row[M["EXP_EN"]])
 
-# Current values (prefer saved QC; fall back to Tamil original)
-orig_q   = row.get(q_col, "")
-orig_opt = row.get(opt_col, "")
-orig_ans = row.get(ans_col, "")
-orig_exp = row.get(exp_col, "")
+ta_q0  = _as_text(row[M["Q_TA"]])
+ta_op0 = _as_text(row[M["OPT_TA"]])
+ta_ans0= _as_text(row[M["ANS_TA"]])
+ta_ex0 = _as_text(row[M["EXP_TA"]])
 
-saved_q   = row.get(qc_q,   "") or orig_q
-saved_opt = row.get(qc_opt, "") or orig_opt
-saved_ans = row.get(qc_ans, "") or orig_ans
-saved_exp = row.get(qc_exp, "") or orig_exp
+en_block = f"{en_q}\n\nOptions (A–D):\n{en_op}\n\nAnswer: {en_ans}\n\nExplanation:\n{en_ex}"
+ta_block = f"{ta_q0}\n\nவிருப்பங்கள் (A–D):\n{ta_op0}\n\nபதில்: {ta_ans0}\n\nவிளக்கம்:\n{ta_ex0}"
 
-# Red: last saved QC
-_panel("SME QC Verified / ஆசிரியரால் தணிக்கை செய்யப்பட்டது", "qc",
-       _clean_lines(_qc_preview_text(saved_q, _split_opts(saved_opt), saved_ans, saved_exp)))
+st.markdown("<div class='panel en'><div class='label'>English Version / ஆங்கில பதிப்பு</div>"
+            f"<div class='mono scroll'>{en_block}</div></div>", unsafe_allow_html=True)
+st.markdown("<div class='panel ta'><div class='label'>Tamil Original / தமிழ் மூலப் பதிப்பு</div>"
+            f"<div class='mono scroll'>{ta_block}</div></div>", unsafe_allow_html=True)
 
-# Yellow: LIVE editable (Q + A–D + Answer + Explanation)
-st.markdown("<div class='box edit'><h4>For SME QC Check / ஆசிரியர் தணிக்கை செய்திட</h4></div>", unsafe_allow_html=True)
+# ---------- EDIT CONSOLE (50%) ----------
+# Prefill from Tamil original on first visit of a row
+row_key = f"prefill_done_{ss.qc_idx}"
+if row_key not in ss:
+    ss[row_key] = True
+    ss.edit_q  = ta_q0
+    A,B,C,D = _split_opts(ta_op0)
+    ss.edit_A, ss.edit_B, ss.edit_C, ss.edit_D = A,B,C,D
+    ss.edit_ans = ta_ans0 if ta_ans0 else A  # default to A if empty
+    ss.edit_ex  = ta_ex0
 
-optA, optB, optC, optD = _split_opts(saved_opt)
-ed_q   = st.text_area("கேள்வி",  value=str(saved_q or ""),  height=100, key=f"ed_q_{ss.qc_idx}")
-ed_oA  = st.text_input("விருப்பம் A", value=optA, key=f"ed_oA_{ss.qc_idx}")
-ed_oB  = st.text_input("விருப்பம் B", value=optB, key=f"ed_oB_{ss.qc_idx}")
-ed_oC  = st.text_input("விருப்பம் C", value=optC, key=f"ed_oC_{ss.qc_idx}")
-ed_oD  = st.text_input("விருப்பம் D", value=optD, key=f"ed_oD_{ss.qc_idx}")
-ed_ans = st.text_input("பதில்",      value=str(saved_ans or ""), key=f"ed_ans_{ss.qc_idx}")
-ed_exp = st.text_area("விளக்கம்", value=str(saved_exp or ""), height=150, key=f"ed_exp_{ss.qc_idx}")
+st.markdown("<div class='panel edit'><div class='label'>SME Edit Console / ஆசிரியர் திருத்தம்</div>", unsafe_allow_html=True)
 
-# Yellow live preview (mirrors inputs above)
-live_preview = _qc_preview_text(ed_q, [ed_oA, ed_oB, ed_oC, ed_oD], ed_ans, ed_exp)
-_panel("For SME QC Check (Live) / ஆசிரியர் தணிக்கை (நேரடி முன்னோட்டம்)", "edit",
-       _clean_lines(live_preview))
+# Question
+ss.edit_q = st.text_area("கேள்வி / Key value (TA)", value=ss.get("edit_q",""), height=90)
 
-# Save actions
-b1, b2, b3 = st.columns([1.4, 1.4, 3])
+# Options: A,B on top; C,D bottom
+colwrap1, colwrap2 = st.columns(1)
+with colwrap1:
+    ab1, ab2 = st.columns(2)
+    with ab1:
+        ss.edit_A = st.text_input("விருப்பம் A", value=ss.get("edit_A",""))
+    with ab2:
+        ss.edit_B = st.text_input("விருப்பம் B", value=ss.get("edit_B",""))
+with colwrap2:
+    cd1, cd2 = st.columns(2)
+    with cd1:
+        ss.edit_C = st.text_input("விருப்பம் C", value=ss.get("edit_C",""))
+    with cd2:
+        ss.edit_D = st.text_input("விருப்பம் D", value=ss.get("edit_D",""))
+
+# Answer + Explanation
+ss.edit_ans = st.text_input("பதில் (A/B/C/D அல்லது உரை)", value=ss.get("edit_ans",""))
+ss.edit_ex  = st.text_area("விளக்கம்", value=ss.get("edit_ex",""), height=140)
+
+# Compose QC text to save back
+def compose_qc_text(q, A,B,C,D, ans, ex):
+    opts_line = f"A) {A} | B) {B} | C) {C} | D) {D}".strip()
+    return f"{q}\n\nவிருப்பங்கள் (A–D):\n{opts_line}\n\nபதில்: {ans}\n\nவிளக்கம்:\n{ex}".strip()
+
+qc_text_live = compose_qc_text(ss.edit_q, ss.edit_A, ss.edit_B, ss.edit_C, ss.edit_D, ss.edit_ans, ss.edit_ex)
+
+# Buttons
+b1, b2, b3 = st.columns([1.2,1.4,2.5])
 with b1:
-    if st.button("💾 Save this step", use_container_width=True):
-        ss.qc_work.at[ss.qc_idx, qc_q]   = ed_q
-        ss.qc_work.at[ss.qc_idx, qc_opt] = _join_opts([ed_oA, ed_oB, ed_oC, ed_oD])
-        ss.qc_work.at[ss.qc_idx, qc_ans] = ed_ans
-        ss.qc_work.at[ss.qc_idx, qc_exp] = ed_exp
-        st.success("Saved. Red panel updated.")
+    if st.button("💾 Save this row", use_container_width=True):
+        ss.qc_work.at[ss.qc_idx, M["QC_TA"]] = qc_text_live
+        st.success("Saved to QC column.")
 with b2:
-    if st.button("💾 Save & Next ▶️", use_container_width=True):
-        ss.qc_work.at[ss.qc_idx, qc_q]   = ed_q
-        ss.qc_work.at[ss.qc_idx, qc_opt] = _join_opts([ed_oA, ed_oB, ed_oC, ed_oD])
-        ss.qc_work.at[ss.qc_idx, qc_ans] = ed_ans
-        ss.qc_work.at[ss.qc_idx, qc_exp] = ed_exp
-        if ss.qc_idx < len(ss.qc_work) - 1:
+    if st.button("💾 Save & Next ▶︎", use_container_width=True):
+        ss.qc_work.at[ss.qc_idx, M["QC_TA"]] = qc_text_live
+        if ss.qc_idx < len(ss.qc_work)-1:
             ss.qc_idx += 1
         st.success("Saved. Moving to next row…")
         st.rerun()
 with b3:
-    st.caption("Tip: ‘Save & Next’ to move quickly. Red shows last saved; Yellow shows your live edits.")
+    st.markdown("<div class='tip'>Tip: Fill A–D separately; ‘Save & Next’ writes to QC column and advances.</div>", unsafe_allow_html=True)
 
-# ---------- Export ----------
-st.divider()
-st.subheader("⬇️ Export")
-xlsx_bytes, csv_bytes = export_qc(ss.qc_src, ss.qc_work, ss.qc_map)
-base = (ss.uploaded_name or "qc_file").replace(".", "_")
-if xlsx_bytes and csv_bytes:
-    st.download_button("Download QC Excel (.xlsx)", data=xlsx_bytes,
-        file_name=f"{base}_qc_verified.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    st.download_button("Download QC CSV (.csv)", data=csv_bytes,
-        file_name=f"{base}_qc_verified.csv", mime="text/csv")
-if st.button("✅ Work complete — Save QC file"):
-    if not xlsx_bytes:
-        st.error("Nothing to export yet.")
-    else:
-        st.success("QC file prepared. Use the buttons above to download now.")
+st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------- END ----------
