@@ -1,16 +1,15 @@
 # pages/03_Email_QC_Panel.py
-# Single-page SME QC Panel (compact iPad layout)
+# Single-page SME QC Panel (compact iPad layout) — with safe mapping checks
 
 import io, os, re
 import pandas as pd
 import streamlit as st
 
-# ----- modular helpers from lib/ -----
 from lib import apply_theme, read_bilingual, export_qc, auto_guess_map, ensure_work
 
 st.set_page_config(page_title="SME QC Panel", page_icon="📝", layout="wide")
 
-# ================= Session =================
+# ---------- Session ----------
 ss = st.session_state
 if "night" not in ss: ss.night = False
 if "hide_sidebar" not in ss: ss.hide_sidebar = False
@@ -21,11 +20,11 @@ if "qc_idx" not in ss: ss.qc_idx = 0
 if "uploaded_name" not in ss: ss.uploaded_name = None
 if "edit_cache" not in ss: ss.edit_cache = {}
 
-# ================= Styles =================
+# ---------- Styles ----------
 st.markdown("""
 <style>
 .block-container { padding-top: 0.6rem; padding-bottom: 0.6rem; }
-.box { border-radius: 10px; padding: .6rem .9rem .7rem .9rem; margin: .5rem 0 0.6rem 0; border: 2px solid rgba(0,0,0,.12);}
+.box { border-radius: 10px; padding: .6rem .9rem .7rem .9rem; margin: .5rem 0 .6rem 0; border: 2px solid rgba(0,0,0,.12);}
 .box h4 { margin: 0 0 .35rem 0; font-size: .96rem; letter-spacing:.2px;}
 .box .mono { white-space: pre-wrap; line-height: 1.45; }
 .box.en  { background: #eaf3ff; border-color:#9cc6ff;}
@@ -33,16 +32,11 @@ st.markdown("""
 .box.prev { background:#fff7da; border-color:#f1cf59;}
 .idtag{display:inline-block;background:#111;color:#fff;border-radius:8px;padding:.25rem .55rem;font-size:.78rem;}
 .kabs{font-size:.78rem; opacity:.8;}
-hr{margin:.35rem 0 .35rem 0;}
-.smallgap{height:.25rem;}
-.compact label p{margin-bottom:0}
-.sublabel{font-size:.85rem; opacity:.8; margin-bottom:.2rem;}
-.togwrap{margin: .2rem 0 .6rem 0; display:flex; gap:1rem; align-items:center;}
-[data-baseweb="input"]{margin:0}
+.togwrap{margin:.2rem 0 .6rem 0; display:flex; gap:1rem; align-items:center;}
 </style>
 """, unsafe_allow_html=True)
 
-# ================ File load & mapping (tiny) =================
+# ---------- Load & map ----------
 with st.expander("📥 Load bilingual file (.csv/.xlsx) & map columns", expanded=ss.qc_src.empty):
     up = st.file_uploader("Upload bilingual file", type=["csv","xlsx"])
     if up:
@@ -83,10 +77,31 @@ with st.expander("📥 Load bilingual file (.csv/.xlsx) & map columns", expanded
 if ss.qc_work.empty:
     st.stop()
 
-# ================ helpers ================
+# ---------- Safe helpers ----------
+REQUIRED_KEYS = ["ID","Q_EN","OPT_EN","ANS_EN","EXP_EN","Q_TA","OPT_TA","ANS_TA","EXP_TA"]
+
 def _txt(x) -> str:
     s = "" if pd.isna(x) else str(x)
     return s.replace("\r\n","\n").strip()
+
+def _need_mapping():
+    missing = [k for k in REQUIRED_KEYS if k not in ss.qc_map]
+    return missing
+
+def _missing_columns_in_row(row):
+    bad = []
+    for k in REQUIRED_KEYS:
+        col = ss.qc_map.get(k, None)
+        if not col or col not in row.index:
+            bad.append((k, col))
+    return bad
+
+def get_val(row, map_key):
+    """Safe getter: returns '' if the mapped column is absent."""
+    col = ss.qc_map.get(map_key, "")
+    if not col or col not in row.index:
+        return ""
+    return _txt(row.get(col, ""))
 
 def split_options(raw: str):
     raw = _txt(raw)
@@ -110,30 +125,44 @@ def compose_qc(q, A, B, C, D, ans, exp):
     ).strip()
 
 # current row
-m  = ss.qc_map
 row = ss.qc_work.iloc[ss.qc_idx]
-rid = _txt(row[m["ID"]])
 
-# ================ header (thin) ================
-top = st.columns([6,2,2,2])
-with top[0]:
+# Guard 1: mapping present
+miss_keys = _need_mapping()
+if miss_keys:
+    st.error("Column mapping not complete. Please open the loader at the top and confirm mapping.")
+    st.write("Missing map keys:", miss_keys)
+    st.stop()
+
+# Guard 2: mapped columns actually exist in the data
+bad_cols = _missing_columns_in_row(row)
+if bad_cols:
+    st.error("Some mapped column names are not present in the uploaded file.")
+    st.write("Fix these mapping entries:", bad_cols)
+    st.write("Available columns:", list(row.index))
+    st.stop()
+
+# ---------- Header ----------
+rid = get_val(row, "ID")
+h1, h2, h3, h4 = st.columns([6,2,2,2])
+with h1:
     st.markdown(f"### 📝 SME QC Panel  &nbsp;&nbsp;<span class='kabs'>English ⇄ Tamil · Row {ss.qc_idx+1}/{len(ss.qc_work)}</span>", unsafe_allow_html=True)
-with top[1]:
+with h2:
     st.markdown(f"<span class='idtag'>ID: {rid}</span>", unsafe_allow_html=True)
-with top[2]:
+with h3:
     if st.button("◀️ Prev", use_container_width=True, disabled=ss.qc_idx==0):
         ss.qc_idx = max(0, ss.qc_idx-1); st.rerun()
-with top[3]:
+with h4:
     if st.button("Next ▶️", use_container_width=True, disabled=ss.qc_idx>=len(ss.qc_work)-1):
         ss.qc_idx = min(len(ss.qc_work)-1, ss.qc_idx+1); st.rerun()
 
 st.progress((ss.qc_idx+1)/len(ss.qc_work))
 
-# ================ English panel (compact) ================
-en_q  = _txt(row[m["Q_EN"]])
-en_op = _txt(row[m["OPT_EN"]])
-en_ans= _txt(row[m["ANS_EN"]])
-en_exp= _txt(row[m["EXP_EN"]])
+# ---------- English panel ----------
+en_q   = get_val(row, "Q_EN")
+en_op  = get_val(row, "OPT_EN")
+en_ans = get_val(row, "ANS_EN")
+en_exp = get_val(row, "EXP_EN")
 
 st.markdown("<div class='box en'><h4>English Version / ஆங்கிலம்</h4>"
             f"<div class='mono'><b>Q:</b> {en_q}\n\n"
@@ -141,11 +170,11 @@ st.markdown("<div class='box en'><h4>English Version / ஆங்கிலம்<
             f"<b>Answer:</b> {en_ans}\n\n"
             f"<b>Explanation:</b> {en_exp}</div></div>", unsafe_allow_html=True)
 
-# ================ Tamil Original (compact) ================
-ta_q  = _txt(row[m["Q_TA"]])
-ta_op = _txt(row[m["OPT_TA"]])
-ta_ans= _txt(row[m["ANS_TA"]])
-ta_exp= _txt(row[m["EXP_TA"]])
+# ---------- Tamil Original ----------
+ta_q   = get_val(row, "Q_TA")
+ta_op  = get_val(row, "OPT_TA")
+ta_ans = get_val(row, "ANS_TA")
+ta_exp = get_val(row, "EXP_TA")
 
 st.markdown("<div class='box ta0'><h4>Tamil Original / தமிழ் மூலப் பதிப்பு</h4>"
             f"<div class='mono'><b>கேள்வி:</b> {ta_q}\n\n"
@@ -153,7 +182,7 @@ st.markdown("<div class='box ta0'><h4>Tamil Original / தமிழ் மூல
             f"<b>பதில்:</b> {ta_ans}\n\n"
             f"<b>விளக்கம்:</b> {ta_exp}</div></div>", unsafe_allow_html=True)
 
-# ====== toggles BELOW the Tamil panel ======
+# Toggles under the Tamil panel
 with st.container():
     st.markdown("<div class='togwrap'>", unsafe_allow_html=True)
     c1, c2 = st.columns([1,1])
@@ -165,7 +194,7 @@ with st.container():
 
 apply_theme(ss.night, hide_sidebar=ss.hide_sidebar)
 
-# ================ SME Edit Console ================
+# ---------- SME Edit Console ----------
 st.markdown("<div class='box prev'><h4>SME Edit Console / ஆசிரியர் திருத்தம்</h4></div>", unsafe_allow_html=True)
 
 row_key = f"r{ss.qc_idx}"
@@ -176,15 +205,11 @@ cache = ss.edit_cache[row_key]
 
 q_val = st.text_area("கேள்வி", value=cache["q"], key=f"q_{row_key}", height=90)
 cA, cB = st.columns(2)
-with cA:
-    A_val = st.text_input("A", value=cache["A"], key=f"A_{row_key}")
-with cB:
-    B_val = st.text_input("B", value=cache["B"], key=f"B_{row_key}")
+with cA: A_val = st.text_input("A", value=cache["A"], key=f"A_{row_key}")
+with cB: B_val = st.text_input("B", value=cache["B"], key=f"B_{row_key}")
 cC, cD = st.columns(2)
-with cC:
-    C_val = st.text_input("C", value=cache["C"], key=f"C_{row_key}")
-with cD:
-    D_val = st.text_input("D", value=cache["D"], key=f"D_{row_key}")
+with cC: C_val = st.text_input("C", value=cache["C"], key=f"C_{row_key}")
+with cD: D_val = st.text_input("D", value=cache["D"], key=f"D_{row_key}")
 ans_val = st.text_input("பதில்", value=cache["ans"], key=f"ans_{row_key}")
 exp_val = st.text_area("விளக்கம்", value=cache["exp"], key=f"exp_{row_key}", height=120)
 
@@ -210,7 +235,7 @@ with bR:
 
 st.divider()
 
-# ================ Export =================
+# ---------- Export ----------
 st.markdown("#### ⬇️ Export")
 xlsx_bytes, csv_bytes = export_qc(ss.qc_src, ss.qc_work, ss.qc_map)
 base = (ss.uploaded_name or "qc_file").replace(".","_")
