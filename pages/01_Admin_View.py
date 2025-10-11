@@ -184,22 +184,24 @@ if df is not None:
         df_view = st.session_state.alloc_df.copy()
 
         edited = st.data_editor(
-            df_view,
-            num_rows="fixed",
-            use_container_width=True,
-            key="alloc_editor",
-            column_config={
-                "SME": st.column_config.TextColumn("SME", help="SME Name"),
-                "Email": st.column_config.TextColumn("Email", disabled=True),
-                "StartRow": st.column_config.NumberColumn("Start Row", disabled=True),
-                "EndRow": st.column_config.NumberColumn("End Row", disabled=True),
-                "AssignedCount": st.column_config.NumberColumn("Rows", disabled=True),
-                "Status": st.column_config.SelectboxColumn(
-                    "Status", options=STATUS_CHOICES, help="Current progress"
-                ),
-                "Notes/Link": st.column_config.TextColumn("Notes/Link"),
-            },
-        )
+    df_view,
+    num_rows="fixed",
+    use_container_width=True,
+    height=420,  # keeps editor visible above iPad keyboard
+    key="alloc_editor",
+    column_config={
+        "SME": st.column_config.TextColumn("SME", help="SME Name"),
+        "Email": st.column_config.TextColumn("Email", help="SME Email", disabled=True),
+        "StartRow": st.column_config.NumberColumn("Start Row", min_value=1, help="Starting row index"),
+        "EndRow": st.column_config.NumberColumn("End Row", min_value=1, help="Ending row index"),
+        "AssignedCount": st.column_config.NumberColumn("Assigned Count", disabled=True),
+        "Status": st.column_config.SelectboxColumn(
+            "Status",
+            options=["Not Started", "In Progress", "Done", "Blocked"]
+        ),
+        "Notes/Link": st.column_config.TextColumn("Notes/Link", help="Notes or progress link"),
+    },
+)
 
         c1, c2 = st.columns(2)
         with c1:
