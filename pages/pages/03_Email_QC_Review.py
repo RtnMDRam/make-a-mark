@@ -1,5 +1,5 @@
 # ================================
-# 03_Email_QC_Generator.py
+# 03_Email_QC_Review.py
 # ================================
 
 import streamlit as st
