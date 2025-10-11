@@ -6,7 +6,39 @@ import streamlit as st
 
 # ---------- Page Setup ----------
 st.set_page_config(page_title="Admin Dashboard", page_icon="📊", layout="wide")
+# --- Mobile / iPad keyboard-friendly layout ---
+from streamlit.components.v1 import html
 
+enable_mobile = True  # set False to disable if not needed
+
+if enable_mobile:
+    # Add extra bottom padding so keyboard doesn't hide inputs
+    st.markdown("""
+    <style>
+      .block-container { padding-bottom: 40vh; }
+      section[data-testid="stSidebar"] .block-container { padding-bottom: 20vh; }
+      .stTextInput, .stNumberInput, .stSelectbox, .stTextArea { margin-bottom: 0.25rem !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Scroll focused field into view automatically
+    html("""
+    <script>
+      (function () {
+        function bringIntoView(e) {
+          try {
+            const el = e.target;
+            const rect = el.getBoundingClientRect();
+            const bottomSafe = window.innerHeight * 0.30;
+            if (rect.bottom > window.innerHeight - bottomSafe) {
+              el.scrollIntoView({ block: "center", behavior: "smooth" });
+            }
+          } catch (err) {}
+        }
+        document.addEventListener('focusin', bringIntoView, { passive: true });
+      })();
+    </script>
+    """, height=0)
 if "alloc_df" not in st.session_state:
     st.session_state.alloc_df = pd.DataFrame()
 if "total_rows" not in st.session_state:
