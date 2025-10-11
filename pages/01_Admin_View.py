@@ -72,7 +72,7 @@ def build_alloc_df(smes, total_rows: int) -> pd.DataFrame:
         })
     return pd.DataFrame(data)
 
-# ---------- SME Allocation ----------
+# ----------- SME Allocation -----------
 st.subheader("👥 SME Allocation")
 
 num_smes = st.number_input("Number of SMEs", min_value=1, max_value=50, value=3)
@@ -87,76 +87,100 @@ for i in range(num_smes):
 
 if df is not None:
     total_rows = len(df)
-    st.write(f"📄 Total rows in file: **{total_rows}**")
-    if st.button("Generate SME Allocation Table"):
+    st.write(f"📄 **Total rows in file:** {total_rows}")
+
+    if st.button("⚙️ Generate SME Allocation (Auto)"):
         alloc_df = build_alloc_df(smes, total_rows)
         st.session_state.alloc_df = alloc_df
         st.session_state.total_rows = total_rows
-        st.success("✅ Allocation table created successfully!")
+        st.success("✅ Allocation table created automatically!")
 
-# ----------- Display Allocation -----------
-if not st.session_state.alloc_df.empty:
-    st.subheader("📋 Current SME Allocation Table")
+    # --- Manual Assignment Mode ---
+    st.markdown("### ✋ Manual Assignment Mode")
+    if "alloc_df" in st.session_state and not st.session_state.alloc_df.empty:
+        alloc_df = st.session_state.alloc_df.copy()
+        total_rows = st.session_state.total_rows
+        manual_counts = []
 
-    df_view = st.session_state.alloc_df.copy()
-    total_rows = st.session_state.get("total_rows", len(df_view))
+        st.info("Adjust row distribution manually below. Totals will auto-update.")
+        remaining = total_rows
 
-    edited = st.data_editor(
-        df_view,
-        num_rows="fixed",
-        use_container_width=True,
-        key="alloc_editor",
-        column_config={
-            "SME": st.column_config.TextColumn("SME", help="SME name"),
-            "Email": st.column_config.TextColumn("Email", help="SME email (read-only)", disabled=True),
-            "StartRow": st.column_config.NumberColumn(
-                "StartRow", min_value=1, max_value=total_rows, step=1, help="First row (1-indexed)"
-            ),
-            "EndRow": st.column_config.NumberColumn(
-                "EndRow", min_value=1, max_value=total_rows, step=1, help="Last row (1-indexed)"
-            ),
-            "AssignedCount": st.column_config.NumberColumn(
-                "Assigned", disabled=True, help="Computed: EndRow - StartRow + 1"
-            ),
-            "Status": st.column_config.SelectboxColumn(
-                "Status", options=STATUS_CHOICES, help="Per-SME progress"
-            ),
-            "Notes/Link": st.column_config.TextColumn("Notes/Link", help="Optional notes or link"),
-        },
-    )
+        for i, (name, email) in enumerate(smes):
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                st.write(f"**{name or f'SME {i+1}'}** ({email})")
+            with c2:
+                count = st.number_input(
+                    "Rows",
+                    key=f"manual_{i}",
+                    min_value=0,
+                    max_value=remaining,
+                    value=int(alloc_df.loc[i, "AssignedCount"]) if i < len(alloc_df) else 0,
+                )
+                manual_counts.append(count)
+                remaining -= count
 
-    # Recompute AssignedCount from Start/End
-    edited["AssignedCount"] = (edited["EndRow"] - edited["StartRow"] + 1).clip(lower=0)
+        if remaining > 0:
+            st.warning(f"{remaining} rows unassigned.")
+        elif remaining < 0:
+            st.error("Too many rows assigned — reduce one SME’s count.")
 
-    # Basic validations
-    issues = []
-    for _, r in edited.iterrows():
-        if r["StartRow"] > r["EndRow"]:
-            issues.append(f"❌ {r['SME']}: StartRow ({r['StartRow']}) is greater than EndRow ({r['EndRow']}).")
-        if r["StartRow"] < 1 or r["EndRow"] > total_rows:
-            issues.append(f"❌ {r['SME']}: Range [{r['StartRow']}-{r['EndRow']}] is outside 1..{total_rows}.")
+        if st.button("🔁 Apply Manual Assignment"):
+            start, rows = 1, []
+            for (name, email), count in zip(smes, manual_counts):
+                end = start + count - 1
+                rows.append(
+                    {
+                        "SME": name,
+                        "Email": email,
+                        "StartRow": start,
+                        "EndRow": end,
+                        "AssignedCount": count,
+                        "Status": "Not Started",
+                        "Notes/Link": "",
+                    }
+                )
+                start = end + 1
 
-    # Overlap check (sorted by start)
-    ranges = sorted(
-        [(int(r["StartRow"]), int(r["EndRow"]), str(r["SME"])) for _, r in edited.iterrows()],
-        key=lambda x: x[0],
-    )
-    for i in range(len(ranges) - 1):
-        s1, e1, n1 = ranges[i]
-        s2, e2, n2 = ranges[i + 1]
-        if s2 <= e1:
-            issues.append(f"⚠️ Overlap: {n1} [{s1}-{e1}] with {n2} [{s2}-{e2}].")
+            new_df = pd.DataFrame(rows)
+            st.session_state.alloc_df = new_df
+            st.success("✅ Manual assignment applied successfully!")
 
-    for msg in issues:
-        (st.error if msg.startswith("❌") else st.warning)(msg)
+    # ---- Display Editable Allocation Table ----
+    if not st.session_state.alloc_df.empty:
+        st.subheader("📋 Current SME Allocation Table")
+        df_view = st.session_state.alloc_df.copy()
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("💾 Save allocation changes"):
-            st.session_state.alloc_df = edited
-            st.success("Saved changes to current session.")
+        edited = st.data_editor(
+            df_view,
+            num_rows="fixed",
+            use_container_width=True,
+            key="alloc_editor",
+            column_config={
+                "SME": st.column_config.TextColumn("SME", help="SME Name"),
+                "Email": st.column_config.TextColumn("Email", disabled=True),
+                "StartRow": st.column_config.NumberColumn("Start Row", disabled=True),
+                "EndRow": st.column_config.NumberColumn("End Row", disabled=True),
+                "AssignedCount": st.column_config.NumberColumn("Rows", disabled=True),
+                "Status": st.column_config.SelectboxColumn(
+                    "Status", options=STATUS_CHOICES, help="Current progress"
+                ),
+                "Notes/Link": st.column_config.TextColumn("Notes/Link"),
+            },
+        )
 
-    with c2:
-        csv_bytes = edited.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("⬇️ Download Allocation CSV", data=csv_bytes,
-                           file_name="sme_allocation.csv", mime="text/csv")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("💾 Save Allocation Changes"):
+                st.session_state.alloc_df = edited
+                st.success("Changes saved successfully!")
+
+        with c2:
+            csv_bytes = edited.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                "⬇️ Download Allocation CSV",
+                data=csv_bytes,
+                file_name="sme_allocation.csv",
+                mime="text/csv",
+            )
+
