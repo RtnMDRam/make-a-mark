@@ -1,7 +1,7 @@
 # =========================
 # Make-A-Mark Streamlit App
 # =========================
-
+from __future__ import annotations
 import streamlit as st
 
 st.set_page_config(
@@ -182,7 +182,7 @@ if df is not None and not df.empty:
     csv_bytes = out.to_csv(index=False).encode("utf-8-sig")
     st.download_button("⬇️ Download Allocation CSV", data=csv_bytes,
                        file_name="sme_allocation.csv", mime="text/csv")
-from __future__ import annotations
+
 import io
 import zipfile
 from typing import List, Tuple
