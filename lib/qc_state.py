@@ -2,25 +2,24 @@
 import ast, math, re
 import streamlit as st
 
-# ===== Zero-outline layout (no boxes, no lines) =====
+# ===== Zero-outline layout with tight spacing & one divider line =====
 _LAYOUT_CSS = """
 <style>
 .block-container{padding-top:12px;padding-bottom:12px;}
 .section{
-    border:0 !important;           /* <-- NO LINES */
-    box-shadow:none !important;    /* <-- NO SHADOWS */
-    background:transparent !important;
-    padding:6px 0 0 0;             /* tight to the top */
-    margin:0 0 12px 0;             /* small gap between sections */
+  border:0 !important; box-shadow:none !important; background:transparent !important;
+  padding:4px 0 0 0;
+  margin:0 0 8px 0;
 }
 .section .title{
-    font-size:13px;
-    font-weight:700;
-    margin:0 0 4px 0;              /* tiny space under title */
-    line-height:1.2;
-    color:#cfcfcf;                  /* just the heading text */
+  font-size:12px; font-weight:700; line-height:1; margin:0 0 2px 0; color:#cfcfcf;
 }
-.note{opacity:.7;font-size:13px;margin:2px 0;}
+/* Tight line spacing for content */
+.content p{margin:2px 0 !important; line-height:1.18;}
+.content ul, .content ol{margin:4px 0 4px 16px;}
+.content strong{font-weight:600;}
+/* Single, thin divider line between Tamil & English */
+hr.thin{border:0;height:1px;background:#3a3a3a;margin:6px 0;}
 </style>
 """
 
@@ -106,7 +105,15 @@ def _render_ta_box():
     o = _fmt_options(_parse_options(row[ta_map["ta.o"]]))
     a = _clean_newlines(_s(row[ta_map["ta.a"]]))
     e = _clean_newlines(_s(row[ta_map["ta.e"]]))
-    st.markdown(f"**கேள்வி :** {q}\n\n**விருப்பங்கள் (A–D) :** {o}\n\n**பதில் :** {a}\n\n**விளக்கம் :** {e}\n")
+    st.markdown(
+        f'<div class="content">'
+        f'<p><strong>கேள்வி :</strong> {q}</p>'
+        f'<p><strong>விருப்பங்கள் (A–D) :</strong> {o}</p>'
+        f'<p><strong>பதில் :</strong> {a}</p>'
+        f'<p><strong>விளக்கம் :</strong> {e}</p>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
 def _render_en_box():
     row, en_map, _ = _get_row()
@@ -118,11 +125,20 @@ def _render_en_box():
     o = _fmt_options(_parse_options(row[en_map["en.o"]]))
     a = _clean_newlines(_s(row[en_map["en.a"]]))
     e = _clean_newlines(_s(row[en_map["en.e"]]))
-    st.markdown(f"**Q :** {q}\n\n**Options (A–D) :** {o}\n\n**Answer :** {a}\n\n**Explanation :** {e}\n")
+    st.markdown(
+        f'<div class="content">'
+        f'<p><strong>Q :</strong> {q}</p>'
+        f'<p><strong>Options (A–D) :</strong> {o}</p>'
+        f'<p><strong>Answer :</strong> {a}</p>'
+        f'<p><strong>Explanation :</strong> {e}</p>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
-# ---------- final renderer (order fixed) ----------
+# ---------- final renderer ----------
 def render_reference_and_editor():
     st.markdown(_LAYOUT_CSS, unsafe_allow_html=True)
     _section_open("SME Panel / ஆசிரியர் அங்கீகாரம் வழங்கும் பகுதி"); _editor_tamil(); _section_close()
     _section_open("தமிழ் மூலப் பதிவு"); _render_ta_box(); _section_close()
+    st.markdown('<hr class="thin">', unsafe_allow_html=True)
     _section_open("English Version"); _render_en_box(); _section_close()
