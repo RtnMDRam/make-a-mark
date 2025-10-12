@@ -1,31 +1,46 @@
-# lib/qc_state.py
+# lib/qc_state.py  — compact references (<50% height) + thin divider line
 import ast, math, re
 import streamlit as st
 
-# ===== Zero-outline layout with tight spacing & one divider line =====
+# ===== Compact layout & typography =====
 _LAYOUT_CSS = """
 <style>
-.block-container{padding-top:12px;padding-bottom:12px;}
-.section{
-  border:0 !important; box-shadow:none !important; background:transparent !important;
-  padding:4px 0 0 0;
-  margin:0 0 8px 0;
+:root{
+  --ref-pane-vh: 23;        /* each ref pane height in viewport %; tweak 22–24 */
+  --divider-color: #5aa3ff; /* thin line between TA & EN — change color here */
 }
-.section .title{
-  font-size:12px; font-weight:700; line-height:1; margin:0 0 2px 0; color:#cfcfcf;
+
+/* page padding small */
+.block-container{padding-top:10px;padding-bottom:10px;}
+
+/* generic section wrapper with NO border */
+.section{border:0!important;box-shadow:none!important;background:transparent!important;
+         margin:0 0 6px 0;padding:0;}
+
+/* titles tiny & tight */
+.section .title{font-size:12px;font-weight:700;line-height:1;margin:0 0 4px 0;color:#cfcfcf;}
+
+.content{
+  font-size:12px; line-height:1.15;          /* tighter lines */
+  padding:0; margin:0;
+  max-height: calc(var(--ref-pane-vh) * 1vh);
+  overflow:auto;                              /* scroll if content is long */
 }
-/* Tight line spacing for content */
-.content p{margin:2px 0 !important; line-height:1.18;}
-.content ul, .content ol{margin:4px 0 4px 16px;}
+
+/* kill extra white-space between paragraphs & lists */
+.content p, .content ul, .content ol{margin:2px 0 !important;}
+.content p + p{margin-top:2px !important;}
+.content ul, .content ol{padding-left:16px;margin:2px 0 2px 16px !important;}
 .content strong{font-weight:600;}
-/* Single, thin divider line between Tamil & English */
-hr.thin{border:0;height:1px;background:#3a3a3a;margin:6px 0;}
+
+/* a SINGLE thin divider between TA and EN */
+hr.ref-divider{border:0;height:1px;background:var(--divider-color);margin:6px 0;}
 </style>
 """
 
-def _section_open(title:str)->None:
+def _section_open(title:str):
     st.markdown(f'<div class="section"><div class="title">{title}</div>', unsafe_allow_html=True)
-def _section_close()->None:
+def _section_close():
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------- helpers ----------
@@ -51,7 +66,7 @@ def _parse_options(val):
         pass
     if "|" in s: parts = [p.strip() for p in s.split("|")]
     elif "," in s: parts = [p.strip() for p in s.split(",")]
-    else: parts = [p.strip(" .)") for p in re.split(r"\d+\)\s*", s) if p.strip()]
+    else: parts = [p.strip(" .)") for p in re.split(r"\d+\\)\\s*", s) if p.strip()]
     return [p for p in parts if p]
 
 def _fmt_options(opts):
@@ -66,41 +81,44 @@ TA_FALLBACKS = {
     "ta.a":["பதில்"],
     "ta.e":["விளக்கம்"],
 }
-def _norm(s): return s.strip().lower()
 
 def _resolve_column_maps(df):
-    cols = list(df.columns); norm = [_norm(c) for c in cols]
+    cols = list(df.columns); lower = [c.strip().lower() for c in cols]
     en_map, ta_map = {}, {}
+    # English
     if all(c in df.columns for c in SHORT_EN):
         en_map = {c:c for c in SHORT_EN}
-    elif all(v in df.columns for v in LONG_EN_MAP.values()):
+    elif all(LONG_EN_MAP[k] in df.columns for k in SHORT_EN):
         en_map = {k:LONG_EN_MAP[k] for k in SHORT_EN}
-    for k, pats in TA_FALLBACKS.items():
-        for pat in pats:
-            for i,nc in enumerate(norm):
-                if _norm(pat) in nc:
-                    ta_map[k] = cols[i]; break
-            if k in ta_map: break
+    # Tamil via fuzzy names
+    for key, keys in TA_FALLBACKS.items():
+        for k in keys:
+            k_low = k.strip().lower()
+            for i, lc in enumerate(lower):
+                if k_low in lc:
+                    ta_map[key] = cols[i]; break
+            if key in ta_map: break
     return en_map, ta_map
 
 def _get_row():
-    df = st.session_state.get("qc_df", None)
+    df = st.session_state.get("qc_df")
     if df is None or df.empty: return None,{},{}
     en_map, ta_map = _resolve_column_maps(df)
     idx = int(st.session_state.get("qc_idx",0))
-    if idx<0 or idx>=len(df): idx=0; st.session_state["qc_idx"]=idx
+    if idx < 0 or idx >= len(df): idx = 0; st.session_state["qc_idx"] = idx
     return df.iloc[idx], en_map, ta_map
 
 # ---------- sections ----------
 def _editor_tamil():
+    # keep editor large; layout request only targets reference panes
     st.text_area("", "", height=340, label_visibility="collapsed")
 
 def _render_ta_box():
-    row, en_map, ta_map = _get_row()
+    row, _, ta_map = _get_row()
     if row is None:
-        st.markdown('<span class="note">Upload a bilingual Excel/CSV and press <b>Load</b>.</span>', unsafe_allow_html=True); return
+        st.markdown('<div class="content">Upload a bilingual file and press <b>Load</b>.</div>', unsafe_allow_html=True); return
     if not ta_map:
-        st.markdown('<span class="note">Tamil columns not found (கேள்வி / விருப்பங்கள் / பதில் / விளக்கம்).</span>', unsafe_allow_html=True); return
+        st.markdown('<div class="content">Tamil columns not found (கேள்வி / விருப்பங்கள் / பதில் / விளக்கம்).</div>', unsafe_allow_html=True); return
     q = _clean_newlines(_s(row[ta_map["ta.q"]]))
     o = _fmt_options(_parse_options(row[ta_map["ta.o"]]))
     a = _clean_newlines(_s(row[ta_map["ta.a"]]))
@@ -111,16 +129,14 @@ def _render_ta_box():
         f'<p><strong>விருப்பங்கள் (A–D) :</strong> {o}</p>'
         f'<p><strong>பதில் :</strong> {a}</p>'
         f'<p><strong>விளக்கம் :</strong> {e}</p>'
-        f'</div>',
-        unsafe_allow_html=True
-    )
+        f'</div>', unsafe_allow_html=True)
 
 def _render_en_box():
     row, en_map, _ = _get_row()
     if row is None:
-        st.markdown('<span class="note">Upload a bilingual Excel/CSV and press <b>Load</b>.</span>', unsafe_allow_html=True); return
+        st.markdown('<div class="content">Upload a bilingual file and press <b>Load</b>.</div>', unsafe_allow_html=True); return
     if not en_map:
-        st.markdown('<span class="note">English columns not found.</span>', unsafe_allow_html=True); return
+        st.markdown('<div class="content">English columns not found.</div>', unsafe_allow_html=True); return
     q = _clean_newlines(_s(row[en_map["en.q"]]))
     o = _fmt_options(_parse_options(row[en_map["en.o"]]))
     a = _clean_newlines(_s(row[en_map["en.a"]]))
@@ -131,14 +147,26 @@ def _render_en_box():
         f'<p><strong>Options (A–D) :</strong> {o}</p>'
         f'<p><strong>Answer :</strong> {a}</p>'
         f'<p><strong>Explanation :</strong> {e}</p>'
-        f'</div>',
-        unsafe_allow_html=True
-    )
+        f'</div>', unsafe_allow_html=True)
 
-# ---------- final renderer ----------
+# ---------- final renderer (order fixed) ----------
 def render_reference_and_editor():
     st.markdown(_LAYOUT_CSS, unsafe_allow_html=True)
-    _section_open("SME Panel / ஆசிரியர் அங்கீகாரம் வழங்கும் பகுதி"); _editor_tamil(); _section_close()
-    _section_open("தமிழ் மூலப் பதிவு"); _render_ta_box(); _section_close()
-    st.markdown('<hr class="thin">', unsafe_allow_html=True)
-    _section_open("English Version"); _render_en_box(); _section_close()
+
+    # TOP: SME editor (Tamil)
+    _section_open("SME Panel / ஆசிரியர் அங்கீகாரம் வழங்கும் பகுதி")
+    _editor_tamil()
+    _section_close()
+
+    # MIDDLE: Tamil reference (compact)
+    _section_open("தமிழ் மூலப் பதிவு")
+    _render_ta_box()
+    _section_close()
+
+    # THIN DIVIDER between Tamil & English
+    st.markdown('<hr class="ref-divider">', unsafe_allow_html=True)
+
+    # BOTTOM: English reference (compact)
+    _section_open("English Version")
+    _render_en_box()
+    _section_close()
