@@ -4,47 +4,53 @@ import streamlit as st
 # --- CSS for compact three-box layout ---
 _LAYOUT_CSS = """
 <style>
-/* hide sidebar + tighten top/bottom padding */
+/* Hide sidebar + tighten layout */
 [data-testid="stSidebar"]{display:none !important;}
 .block-container{padding-top:8px; padding-bottom:8px;}
 
-/* stack boxes with no vertical gap */
+/* Stack boxes with zero gap */
 .stack{display:grid; grid-template-rows:auto auto auto; row-gap:0;}
 
-/* common box style */
+/* Common box style */
 .card{
   margin:0;
-  padding:10px 14px;
+  padding:4px 10px 6px 10px;  /* 🔹 Less top padding for tight title */
   border:2px solid #c0c7d0;
   border-radius:8px;
   background:#fff;
 }
 
-/* colors for each panel */
+/* Individual border colors */
 .ed-card{border-color:#1f4fbf;}
 .ta-card{border-color:#199c4b;}
 .en-card{border-color:#316dca;}
 
-/* heights: 40 / 25 / 25 ratio */
+/* Box height ratio */
 .ed-card{min-height:40vh;}
 .ta-card{min-height:25vh;}
 .en-card{min-height:25vh;}
 
-/* reduce font size inside boxes */
+/* 🔹 Smaller, tighter titles */
 .card h4{
-  font-size:16px;
+  font-size:12px !important;     /* Reduced text size */
   font-weight:600;
-  margin:0 0 4px 0;
+  margin:0;                      /* Remove default spacing */
+  padding-top:2px;               /* Bring text near top border */
+  padding-bottom:2px;
 }
+
+/* 🔹 Smaller text inside the boxes */
 .card p, .card div, .card span {
-  font-size:14px !important;
-  line-height:1.4em;
+  font-size:12px !important;
+  line-height:1.3em;
+  margin:0;
+  padding:0;
 }
 </style>
 """
 
 def render_boxes_only():
-    """Show three clean bordered boxes with small text."""
+    """Render three bordered panels — compact, minimal spacing."""
     st.markdown(_LAYOUT_CSS, unsafe_allow_html=True)
     st.markdown(
         """
