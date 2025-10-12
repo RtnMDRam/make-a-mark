@@ -1,87 +1,132 @@
 # pages/03_Email_QC_Panel.py
+import io, re, pandas as pd
 import streamlit as st
-from lib.top_strip import render_top_strip
 
-st.set_page_config(page_title="SME QC Panel", layout="wide")
+st.set_page_config(
+    page_title="SME QC Panel",
+    page_icon="📑",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
-# minimal CSS (also hides the floating bottom-right control)
+# --- kill sidebar + extra chrome, keep paddings tight
 st.markdown("""
 <style>
-[data-testid="stToolbar"], .stAppDeployButton, [data-testid="stDecoration"]{visibility:hidden;height:0;}
-footer{visibility:hidden;height:0;}
-.block-container{padding-top:6px;padding-bottom:6px;}
-/* SME title smaller */
-h2, h3 { margin: 6px 0 4px 0; }
-div[role="alert"] {display:none;} /* hide Session State banner */
+[data-testid="stSidebar"] {display:none !important;}
+header, footer, [data-testid="collapsedControl"] {visibility:hidden;height:0;}
+.block-container {padding-top:8px !important; padding-bottom:8px !important;}
+/* make action row compact */
+.topstrip .stButton>button{padding:6px 14px; height:38px;}
+.topstrip .pill{background:#222832;color:#fff;border-radius:8px;padding:10px 14px;}
+.topstrip .rightpill{justify-self:end;}
+/* keep uploader row single-line on iPad */
+.uprow [data-testid="stHorizontalBlock"]{gap:10px}
+.manage-app{display:none !important;} /* hides Streamlit Cloud "Manage app" FAB */
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- TOP STRIP (10% height) ----------
-render_top_strip()
+# ---------------- utilities ----------------
+def _clean_drive(url:str)->str:
+    """accepts drive links and converts to direct download"""
+    if "drive.google.com" not in url:
+        return url.strip()
+    m = re.search(r"/file/d/([^/]+)/", url)
+    if m: return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    m = re.search(r"[?&]id=([^&]+)", url)
+    if m: return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    return url.strip()
 
-# stop here until we have data
+def _read_any(source)->pd.DataFrame:
+    """source can be file-like (UploadedFile) or url str"""
+    if hasattr(source, "read"):  # uploaded file
+        name = (getattr(source, "name", "") or "").lower()
+        if name.endswith(".csv"):
+            return pd.read_csv(source)
+        return pd.read_excel(source)
+    if isinstance(source, str):
+        u = _clean_drive(source)
+        # try csv then xlsx
+        try: return pd.read_csv(u)
+        except Exception: return pd.read_excel(u)
+    raise RuntimeError("Unsupported source")
+
+# ---------------- TOP STRIP ----------------
+def top_strip():
+    ss = st.session_state
+    st.markdown('<div class="topstrip">', unsafe_allow_html=True)
+
+    h1, h2, h3 = st.columns([2,6,2], vertical_alignment="center")
+    with h1:
+        st.markdown('<div class="pill">**12 Oct 2025**<br><span style="opacity:.8;">Oct 12</span></div>', unsafe_allow_html=True)
+    with h2:
+        st.markdown('<div class="pill" style="text-align:center;">'
+                    'பாட பொருள் நிபுணர் பலகை / SME Panel<br>'
+                    f'<span style="opacity:.8;">ID: {ss.get("cur_id","—")}</span>'
+                    '</div>', unsafe_allow_html=True)
+    with h3:
+        st.markdown('<div class="pill rightpill" style="text-align:right;">'
+                    '<span id="clock24">09:58</span><br><span style="opacity:.8;">24-hr</span>'
+                    '</div>', unsafe_allow_html=True)
+
+    a1,a2,a3,a4 = st.columns([1.5,1.8,1.8,2.0], vertical_alignment="center")
+    with a1: st.button("💾 Save", key="btn_save", use_container_width=True)
+    with a2: st.button("✅ Mark Complete", key="btn_complete", use_container_width=True)
+    with a3: st.button("🗂️ Save & Next", key="btn_next", use_container_width=True)
+    with a4: st.button("📥 Download QC", key="btn_dl", use_container_width=True, disabled=("qc_work" not in ss))
+
+    st.write("")  # tiny spacer
+
+    # input row (link + file + Load)
+    upL, loadC, upR = st.columns([6,1,6], vertical_alignment="center")
+    with upL:
+        link = st.text_input("Paste the CSV/XLSX link sent by admin (or upload). Quick & compact.",
+                             key="link_in", label_visibility="visible", placeholder="Paste the CSV/XLSX link")
+    with loadC:
+        # normal width -> no “vertical letters”
+        load_clicked = st.button("Load", key="btn_load", use_container_width=True)
+    with upR:
+        st.file_uploader("Upload the file here (Limit 200 MB per file)",
+                         type=["csv","xlsx"], key="file_in")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # logic: allow EITHER link OR file.
+    msg = None
+    if load_clicked:
+        src = None
+        if st.session_state.get("file_in") is not None:
+            src = st.session_state["file_in"]
+        elif (link or "").strip():
+            src = link.strip()
+        else:
+            msg = ("warn", "Please provide a link or choose a file.")
+        if src is not None:
+            try:
+                df = _read_any(src)
+                # normalize minimal expected columns if present
+                ss.qc_src = df.copy()
+                ss.qc_work = df.copy()
+                ss.qc_idx = 0
+                ss.cur_id = str(df.iloc[0].get("_id", "—")) if not df.empty else "—"
+                msg = ("ok", "Loaded from file.")
+            except Exception as e:
+                msg = ("err", f"Could not open. {e}")
+
+    if msg:
+        level, text = msg
+        if level=="ok": st.success(text)
+        elif level=="warn": st.warning(text)
+        else: st.error(text)
+
+# --------- PAGE BODY ----------
+top_strip()
+
 ss = st.session_state
-if ("qc_work" not in ss) or (getattr(ss, "qc_work", None) is None) or ss.qc_work.empty:
+if "qc_work" not in ss or ss.qc_work is None or len(ss.qc_work)==0:
     st.info("Paste a link or upload a file at the top strip to begin.")
     st.stop()
 
-# ---------- English/Tamil reference blocks ----------
-def ref_panel(title, text):
-    st.markdown(f"#### {title}")
-    st.markdown(f"<div style='background:#e9f2ff;border:1px solid #cbd8ff;border-radius:8px;padding:10px'>{text}</div>",
-                unsafe_allow_html=True)
-
-row = ss.qc_work.iloc[ss.qc_idx]
-en = [
-    f"**Q:** {row['Question (English)']}",
-    f"**Options (A–D):** {row['Options (English)']}",
-    f"**Answer:** {row['Answer (English)']}",
-    f"**Explanation:** {row['Explanation (English)']}",
-]
-ta = [
-    f"**Q:** {row['Question (Tamil)']}",
-    f"**Options (A–D):** {row['Options (Tamil)']}",
-    f"**Answer:** {row['Answer (Tamil)']}",
-    f"**Explanation:** {row['Explanation (Tamil)']}",
-]
-ref_panel("English Version / ஆங்கிலம்", "<br>".join(en))
-ref_panel("Tamil Original / தமிழ் மூலப் பதிப்பு", "<br>".join(ta))
-
-# ---------- SME edit console (compact) ----------
-st.markdown("### SME Edit Console / ஆசிரியர் திருத்தம்")
-
-q = st.text_area("", value=row["Question (Tamil)"], label_visibility="collapsed")
-c1,c2 = st.columns(2)
-with c1:
-    a = st.text_input("A", value="")
-    c = st.text_input("C", value="")
-with c2:
-    b = st.text_input("B", value="")
-    d = st.text_input("D", value="")
-
-g1,g2 = st.columns([1,1])
-with g1:
-    gloss = st.text_input("சொல் அகராதி / Glossary", value="", placeholder="(Type the word)")
-with g2:
-    ans = st.text_input("பதில் / Answer", value=row["Answer (Tamil)"])
-
-exp = st.text_area("விளக்கங்கள் :", value=row["Explanation (Tamil)"], height=140)
-
-# actions (wired to state)
-a1,a2,a3 = st.columns([1,1,1])
-with a1:
-    if st.button("💾 Save"):
-        ss.qc_work.at[ss.qc_idx, "Question (Tamil)"] = q
-        ss.qc_work.at[ss.qc_idx, "Answer (Tamil)"]   = ans
-        ss.qc_work.at[ss.qc_idx, "Explanation (Tamil)"] = exp
-        st.success("Saved.", icon="✅")
-with a2:
-    if st.button("✅ Mark Complete"):
-        st.success("Marked complete.", icon="✅")
-with a3:
-    if st.button("📄 Save & Next"):
-        ss.qc_work.at[ss.qc_idx, "Question (Tamil)"] = q
-        ss.qc_work.at[ss.qc_idx, "Answer (Tamil)"]   = ans
-        ss.qc_work.at[ss.qc_idx, "Explanation (Tamil)"] = exp
-        ss.qc_idx = min(ss.qc_idx + 1, len(ss.qc_work)-1)
-        st.rerun()
+# From here render your existing English/Tamil reference + SME editor
+# (unchanged logic you already had)
+from lib.qc_state import render_reference_and_editor  # your own helper
+render_reference_and_editor()
