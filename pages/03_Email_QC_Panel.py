@@ -1,28 +1,48 @@
 # pages/03_Email_QC_Panel.py
 import streamlit as st
+from lib.top_strip import render_top_strip
+from lib.editor_panel import render_references_and_editor
 
-st.set_page_config(page_title="SME QC Panel", page_icon="📜", layout="wide")
+st.set_page_config(page_title="SME QC Panel", page_icon="📜", layout="wide", initial_sidebar_state="collapsed")
 
-# --- Global compaction + hide floating badge --------------------------
+# --- global CSS: palm-leaf theme + remove chrome & gaps ---------------------
 st.markdown("""
 <style>
-main .block-container{padding:8px 10px 6px;}
-.element-container{margin-bottom:6px}
-hr, div[role="separator"]{display:none !important;height:0 !important;margin:0 !important;}
-.viewerBadge_container__1QSob, button[title="Manage app"]{display:none !important;}
+/* Hide sidebar & Streamlit extra chrome (toolbar, separator, status) */
+[data-testid="stSidebar"]{display:none;}
+header, footer, .stAppToolbar, [data-testid="collapsedControl"],
+div[role="separator"], div[data-testid="stStatusWidget"] {visibility:hidden;height:0;margin:0;padding:0;}
+/* Page gutters low; no bottom slack */
+main .block-container{padding:8px 14px 8px;}
+/* Palm-leaf background */
+html, body, .stApp {background:#efe7d2;}
+/* Cards */
+.box{border:1px solid #d8cfb1;border-radius:12px;padding:10px 14px;margin:8px 0;background:#fffaf0;}
+.box.en{background:#e8effb;border-color:#b8c9ee;}
+.box.ta{background:#eaf6e9;border-color:#b8e0b5;}
+/* Inputs tighter, uniform */
+input, textarea{font-size:16px;}
+label{font-size:14px;}
+/* Subheader small (not huge) */
+.sme-sub{font-weight:700;font-size:18px;margin:4px 0 6px;}
+/* Option rows compact */
+.optrow > div{margin-bottom:6px;}
+/* Tiny rule */
+.hr{height:6px;background:#212529;border-radius:12px;margin:4px 0 8px;}
+/* Buttons look classic */
+.btn > button{width:100%; border-radius:10px;}
+/* Hide scroll gap bottom */
+.block-container div:has(> .spacer-bottom){margin-bottom:0 !important;}
 </style>
 """, unsafe_allow_html=True)
 
-# --- Wire the two sections --------------------------------------------
-from lib.top_strip import render_top_strip
-from lib.editor_panel import render_editor
+# ---------------- top strip (toolbar + loader) ----------------
+render_top_strip()
 
-# 1) Top strip: returns True when a DataFrame is available in session
-has_data = render_top_strip()
-
-# 2) If no data yet, stop here so SMEs only see the top strip
-if not has_data:
-    st.stop()
-
-# 3) Main editor below (English/Tamil cards + compact SME console)
-render_editor()
+# If there is work in session, show references + edit
+ss = st.session_state
+if ss.get("qc_work") is not None and not ss.qc_work.empty:
+    render_references_and_editor()
+else:
+    # Gentle hint only when nothing loaded
+    st.info("Paste the CSV/XLSX link or upload a file above, then press **Load**.")
