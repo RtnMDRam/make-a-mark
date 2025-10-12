@@ -1,44 +1,53 @@
 # lib/qc_state.py
 import streamlit as st
 
-# ---------- CSS: single-line borders, zero gaps, no stray bars ----------
+# ---------- CSS: single separator line + fixed heights ----------
 _LAYOUT_CSS = """
 <style>
 [data-testid="stSidebar"]{display:none !important;}
 .block-container{padding-top:10px;padding-bottom:10px;}
 
-/* real panels only */
+/* PANELS (no box border; we draw ONE top line via ::before) */
 .panel{
-  background:#ffffff !important;
-  border:1px solid #cbd5e1;
-  border-radius:10px;
-  padding:14px 16px;
-  margin:0;
+  position:relative;
+  background:#ffffff;
+  padding:14px 16px 14px 16px;
+  margin:0;                      /* panels touch */
+  overflow:auto;                 /* scroll inside if content exceeds height */
 }
-.panel + .panel{ margin-top:0 !important; }   /* panels touch */
 
-/* colored line (border only) per panel type */
-.panel.ed{ border-color:#475569; }  /* editable */
-.panel.ta{ border-color:#16a34a; }  /* tamil */
-.panel.en{ border-color:#3b82f6; }  /* english */
+/* single separator line */
+.panel::before{
+  content:"";
+  display:block;
+  height:0;
+  border-top:1.6px solid #64748b;  /* visible, single line */
+  margin:0 0 12px 0;
+}
 
-/* headings */
+/* color per section (only the single line) */
+.panel.ed::before{ border-color:#475569; }  /* top, editable Tamil */
+.panel.ta::before{ border-color:#16a34a; }  /* middle, Tamil reference */
+.panel.en::before{ border-color:#2563eb; }  /* bottom, English reference */
+
+/* fixed heights using viewport units (approx: 40% / 25% / 25%) */
+.panel.ed{  min-height:40vh; }
+.panel.ta{  min-height:25vh; }
+.panel.en{  min-height:25vh; }
+
+/* headings & labels */
 .panel h4{ margin:0 0 10px 0; font-size:18px; font-weight:700; color:#111827; }
-
-/* reference rows */
 .row{ display:grid; grid-template-columns:auto 1fr; gap:8px; align-items:start; }
 .label{ font-weight:600; color:#334155; }
-.sep{ opacity:.75; }
+.sep{ opacity:.8; }
 
 /* compact inputs */
 .stTextArea textarea, .stTextInput input{ font-size:16px; }
 
-/* nuke any accidental bars/dividers */
-.ta-bar, .en-bar, .ed-bar, hr, .stDivider, [data-testid="stDivider"]{
+/* remove any accidental lines/dividers */
+hr, .stDivider, [data-testid="stDivider"], .ta-bar, .en-bar, .ed-bar{
   display:none !important; height:0 !important; margin:0 !important; padding:0 !important; border:0 !important;
 }
-/* if any element with class="panel" is empty, hide it (prevents stray borders) */
-.panel:empty{ display:none !important; height:0 !important; padding:0 !important; border:0 !important; }
 </style>
 """
 
@@ -76,7 +85,7 @@ def _reference_english():
   st.markdown('</div>', unsafe_allow_html=True)
 
 def render_layout_only():
-  """Locked order: Editor (top) → Tamil (middle) → English (bottom)."""
+  """Locked order: Editor (top) → Tamil reference (middle) → English reference (bottom)."""
   st.markdown(_LAYOUT_CSS, unsafe_allow_html=True)
   _editor_tamil()
   _reference_tamil()
