@@ -2,13 +2,13 @@
 import streamlit as st
 import re
 
-# ========== STYLES ==========
+# ---------- STYLES ----------
 CSS = """
 <style>
 :root{
-  --ref-vh:20;        /* 20% viewport height each */
-  --sep-top:#63d063;  /* green line SME→Tamil */
-  --sep-mid:#4f92ff;  /* blue line Tamil→English */
+  --ref-vh:20;        /* 20% of viewport height each (Tamil + English = 40%) */
+  --sep-top:#63d063;  /* green line between SME edit and Tamil ref */
+  --sep-mid:#4f92ff;  /* blue line between Tamil ref and English ref */
 }
 .block-container{padding-top:10px !important; padding-bottom:10px !important;}
 .qc-title{font-size:14px;font-weight:700;margin:0 0 6px 0;color:#e5e5e5;}
@@ -20,17 +20,17 @@ CSS = """
   height:calc(var(--ref-vh)*1vh);
   overflow:auto;
   font-size:16px;
-  line-height:1.35;
+  line-height:1.36;
   color:#eaeaea;
   padding:4px 8px;
   text-align:justify;
 }
 .qc-ref p{margin:4px 0;}
-.qc-label{font-size:12px;opacity:0.8;margin-bottom:4px;}
+.qc-label{font-size:12px;opacity:0.85;margin-bottom:4px;}
 </style>
 """
 
-# ========== HELPERS ==========
+# ---------- HELPERS ----------
 def clean_text(s):
     if not s: return ""
     s=str(s).replace("\\r"," ").replace("\\n"," ")
@@ -69,7 +69,7 @@ def english_html(row):
     if len(html)==1: html.append("<p><i>(English columns missing)</i></p>")
     return "".join(html)
 
-# ========== MAIN ==========
+# ---------- MAIN ----------
 st.set_page_config(page_title="SME QC Panel", layout="wide")
 st.markdown(CSS, unsafe_allow_html=True)
 
