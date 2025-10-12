@@ -52,8 +52,10 @@ def render_top_strip():
     _css_once()
     now = dt.datetime.now()
     left, mid, right = st.columns([1,2,1])
-    with left:  _pill(now.strftime("**%d %b %Y**\nOct %d" % (now.day, now.day)))
-    with right: _pill(now.strftime("%H:%M\n24-hr"), right=True)
+    with left:
+    _pill(f"**{now:%d %b %Y}**\nOct {now:%d}")
+    with right:
+    _pill(f"**{now:%H:%M}**\n24-hr", right=True)
 
     st.markdown("### பாட பொருள் நிபுணர் பலகை / SME Panel")
     subL, subM, subR, subD = st.columns([1.1,1,1,1.2])
