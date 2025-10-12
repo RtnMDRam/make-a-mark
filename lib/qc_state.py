@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 from typing import List, Optional, Tuple
 
-# ---------- CSS: compact, tidy ----------
+# ---------- CSS ----------
 _CSS = """
 <style>
 :root{
@@ -17,11 +17,10 @@ _CSS = """
          border-radius:10px; padding:14px 14px 10px 14px;  margin:10px 0 22px;}
 h3.sme {margin: 6px 0 10px 0;}
 .lbl{font-size:14px; color:#444; margin:2px 0 6px 2px; font-weight:600;}
-.note{font-size:13px; color:#666;}
 hr.tight {margin: 14px 0 10px 0;}
 div.block-container{padding-top:1rem;}
 .stTextInput>div>div input[disabled] {opacity:0.85;}
-.opt .stTextInput>div>div, .opt .stTextInput>div>div>input {height:40px;}
+.optbox .stTextInput>div>div, .optbox .stTextInput>div>div>input {height:40px;}
 </style>
 """
 def _css_once():
@@ -29,23 +28,23 @@ def _css_once():
         st.session_state.qc_css_once = True
         st.markdown(_CSS, unsafe_allow_html=True)
 
-# ---------- column name helpers ----------
+# ---------- Column name helpers ----------
 CANDIDATES = {
-    "ta_q": ["ta_q", "t_q", "ta_question", "ta_ques", "ques_ta"],
-    "ta_a": ["ta_a", "t_ans", "ta_answer", "answer_ta"],
-    "ta_exp": ["ta_exp", "t_exp", "ta_explanation", "explanation_ta", "ta_expl"],
-    "ta_opt_a": ["ta_opt_a", "ta_a_opt", "ta_A", "ta_opt1", "ta_option_a"],
-    "ta_opt_b": ["ta_opt_b", "ta_b_opt", "ta_B", "ta_opt2", "ta_option_b"],
-    "ta_opt_c": ["ta_opt_c", "ta_c_opt", "ta_C", "ta_opt3", "ta_option_c"],
-    "ta_opt_d": ["ta_opt_d", "ta_d_opt", "ta_D", "ta_opt4", "ta_option_d"],
+    "ta_q": ["ta_q", "t_q", "ta_question", "ta_ques"],
+    "ta_a": ["ta_a", "t_ans", "ta_answer"],
+    "ta_exp": ["ta_exp", "t_exp", "ta_explanation"],
+    "ta_opt_a": ["ta_opt_a", "ta_A", "ta_opt1"],
+    "ta_opt_b": ["ta_opt_b", "ta_B", "ta_opt2"],
+    "ta_opt_c": ["ta_opt_c", "ta_C", "ta_opt3"],
+    "ta_opt_d": ["ta_opt_d", "ta_D", "ta_opt4"],
 
-    "en_q": ["en_q", "e_q", "en_question", "question_en"],
-    "en_a": ["en_a", "e_ans", "en_answer", "answer_en"],
-    "en_exp": ["en_exp", "e_exp", "en_explanation", "explanation_en"],
-    "en_opt_a": ["en_opt_a", "en_A", "en_opt1", "option_a", "en_option_a"],
-    "en_opt_b": ["en_opt_b", "en_B", "en_opt2", "option_b", "en_option_b"],
-    "en_opt_c": ["en_opt_c", "en_C", "en_opt3", "option_c", "en_option_c"],
-    "en_opt_d": ["en_opt_d", "en_D", "en_opt4", "option_d", "en_option_d"],
+    "en_q": ["en_q", "e_q", "en_question"],
+    "en_a": ["en_a", "e_ans", "en_answer"],
+    "en_exp": ["en_exp", "e_exp", "en_explanation"],
+    "en_opt_a": ["en_opt_a", "en_A", "en_opt1"],
+    "en_opt_b": ["en_opt_b", "en_B", "en_opt2"],
+    "en_opt_c": ["en_opt_c", "en_C", "en_opt3"],
+    "en_opt_d": ["en_opt_d", "en_D", "en_opt4"],
 }
 
 def _pick(df: pd.DataFrame, wanted: List[str]) -> Optional[str]:
@@ -73,12 +72,8 @@ def _format_opt_line(opts: List[str]) -> str:
     parts = [(o if o else "—") for o in opts]
     return " | ".join(parts)
 
-# ---------- main ----------
+# ---------- Main Renderer ----------
 def render_reference_and_editor():
-    """
-    Layout: Editor (top) → Tamil Original (middle) → English Version (bottom).
-    Uses st.session_state.qc_df (DataFrame) and st.session_state.qc_idx (int).
-    """
     _css_once()
 
     df: pd.DataFrame = st.session_state.get("qc_df", pd.DataFrame())
@@ -120,7 +115,7 @@ def render_reference_and_editor():
     en_ex = _row_value(row, en_cols["exp"])
     en_opts = _options_from_row(row, (en_cols["A"], en_cols["B"], en_cols["C"], en_cols["D"]))
 
-    # auto display answer text if Tamil answer is A/B/C/D
+    # auto display correct answer
     auto_ta_ans = ta_a
     if ta_a.upper() in ("A", "B", "C", "D"):
         m = {"A":0, "B":1, "C":2, "D":3}
@@ -137,17 +132,16 @@ def render_reference_and_editor():
         st.markdown('<div class="lbl">பதில் / Answer</div>', unsafe_allow_html=True)
         st.text_input(" ", value=auto_ta_ans or "—", key="ed_ans", label_visibility="collapsed")
 
+    # No "A B C D" labels — just show boxes
     st.markdown('<div class="lbl">விருப்பங்கள் (A–D) / Options</div>', unsafe_allow_html=True)
-    r1c1, r1c2 = st.columns(2)
-    r2c1, r2c2 = st.columns(2)
-    with r1c1:
-        st.text_input("A", value=ta_opts[0] or "—", key="ed_A", help='Auto Display "A"', disabled=True)
-    with r1c2:
-        st.text_input("C", value=ta_opts[2] or "—", key="ed_C", help='Auto Display "C"', disabled=True)
-    with r2c1:
-        st.text_input("B", value=ta_opts[1] or "—", key="ed_B", help='Auto Display "B"', disabled=True)
-    with r2c2:
-        st.text_input("D", value=ta_opts[3] or "—", key="ed_D", help='Auto Display "D"', disabled=True)
+    with st.container():
+        r1, r2 = st.columns(2)
+        with r1:
+            st.text_input(" ", value=ta_opts[0] or "—", key="ed_A", disabled=True, label_visibility="collapsed")
+            st.text_input(" ", value=ta_opts[1] or "—", key="ed_B", disabled=True, label_visibility="collapsed")
+        with r2:
+            st.text_input(" ", value=ta_opts[2] or "—", key="ed_C", disabled=True, label_visibility="collapsed")
+            st.text_input(" ", value=ta_opts[3] or "—", key="ed_D", disabled=True, label_visibility="collapsed")
 
     gl_col, exp_col = st.columns([1.1, 2.4])
     with gl_col:
@@ -159,7 +153,7 @@ def render_reference_and_editor():
 
     st.markdown('<hr class="tight">', unsafe_allow_html=True)
 
-    # --- Tamil Original (middle) ---
+    # --- Tamil Original ---
     st.markdown("### Tamil Original / தமிழ் மூலப் பதிப்பு")
     opts_line_ta = _format_opt_line(ta_opts)
     st.markdown(
@@ -174,7 +168,7 @@ def render_reference_and_editor():
         unsafe_allow_html=True,
     )
 
-    # --- English Version (bottom) ---
+    # --- English Version ---
     st.markdown("### English Version / ஆங்கிலம்")
     opts_line_en = _format_opt_line(en_opts)
     st.markdown(
