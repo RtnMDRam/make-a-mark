@@ -1,184 +1,116 @@
 # lib/qc_state.py
-from __future__ import annotations
 import streamlit as st
 import pandas as pd
-from typing import List, Optional, Tuple
 
-# ---------- CSS ----------
-_CSS = """
-<style>
-:root{
-  --card-bg:#f6fbff; --card-br:#dfeaf5;
-  --ta-bg:#f6fff6; --ta-br:#d8efd8;
-}
-.ref-card{border:1px solid var(--ta-br); background:var(--ta-bg);
-          border-radius:10px; padding:14px 14px 10px 14px; margin:10px 0 22px;}
-.en-card{border:1px solid var(--card-br); background:var(--card-bg);
-         border-radius:10px; padding:14px 14px 10px 14px;  margin:10px 0 22px;}
-h3.sme {margin: 6px 0 10px 0;}
-.lbl{font-size:14px; color:#444; margin:2px 0 6px 2px; font-weight:600;}
-hr.tight {margin: 14px 0 10px 0;}
-div.block-container{padding-top:1rem;}
-.stTextInput>div>div input[disabled] {opacity:0.85;}
-.optbox .stTextInput>div>div, .optbox .stTextInput>div>div>input {height:40px;}
-</style>
-"""
-def _css_once():
-    if "qc_css_once" not in st.session_state:
-        st.session_state.qc_css_once = True
-        st.markdown(_CSS, unsafe_allow_html=True)
+# ---------- helpers ----------
+def _get_first(row: pd.Series, candidates, default=""):
+    for c in candidates:
+        if c in row and pd.notna(row[c]) and str(row[c]).strip() != "":
+            return str(row[c]).strip()
+    return default
 
-# ---------- Column name helpers ----------
-CANDIDATES = {
-    "ta_q": ["ta_q", "t_q", "ta_question", "ta_ques"],
-    "ta_a": ["ta_a", "t_ans", "ta_answer"],
-    "ta_exp": ["ta_exp", "t_exp", "ta_explanation"],
-    "ta_opt_a": ["ta_opt_a", "ta_A", "ta_opt1"],
-    "ta_opt_b": ["ta_opt_b", "ta_B", "ta_opt2"],
-    "ta_opt_c": ["ta_opt_c", "ta_C", "ta_opt3"],
-    "ta_opt_d": ["ta_opt_d", "ta_D", "ta_opt4"],
+def _opts_line(a, b, c, d):
+    # Always show 4 slots; use em dash for any missing ones
+    slots = [a or "—", b or "—", c or "—", d or "—"]
+    return " | ".join(slots)
 
-    "en_q": ["en_q", "e_q", "en_question"],
-    "en_a": ["en_a", "e_ans", "en_answer"],
-    "en_exp": ["en_exp", "e_exp", "en_explanation"],
-    "en_opt_a": ["en_opt_a", "en_A", "en_opt1"],
-    "en_opt_b": ["en_opt_b", "en_B", "en_opt2"],
-    "en_opt_c": ["en_opt_c", "en_C", "en_opt3"],
-    "en_opt_d": ["en_opt_d", "en_D", "en_opt4"],
-}
-
-def _pick(df: pd.DataFrame, wanted: List[str]) -> Optional[str]:
-    for name in wanted:
-        if name in df.columns:
-            return name
-    return None
-
-def _row_value(row: pd.Series, col: Optional[str]) -> str:
-    if not col: return ""
-    val = row.get(col, "")
-    if pd.isna(val): return ""
-    return str(val).strip()
-
-def _options_from_row(row: pd.Series, cols: Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]) -> List[str]:
-    a = _row_value(row, cols[0])
-    b = _row_value(row, cols[1])
-    c = _row_value(row, cols[2])
-    d = _row_value(row, cols[3])
-    return [a, b, c, d]
-
-def _format_opt_line(opts: List[str]) -> str:
-    if not any(o for o in opts):
-        return "— | — | — | —"
-    parts = [(o if o else "—") for o in opts]
-    return " | ".join(parts)
-
-# ---------- Main Renderer ----------
+# ---------- main renderer ----------
 def render_reference_and_editor():
-    _css_once()
-
-    df: pd.DataFrame = st.session_state.get("qc_df", pd.DataFrame())
+    """
+    Uses st.session_state.qc_df (DataFrame) and st.session_state.qc_idx (int).
+    Renders:
+      1) Teacher edit console (top, minimal spacing, NO A/B/C/D labels)
+      2) Tamil Original reference (middle) with Options line
+      3) English reference (bottom) with Options line
+    """
+    if "qc_df" not in st.session_state or st.session_state.qc_df is None:
+        return
+    df: pd.DataFrame = st.session_state.qc_df
     idx: int = int(st.session_state.get("qc_idx", 0))
-    if df.empty or idx < 0 or idx >= len(df):
-        st.info("Paste a link or upload a file, then press **Load**.", icon="ℹ️")
+    if idx < 0 or idx >= len(df):
+        st.warning("Row index is out of range.")
         return
 
     row = df.iloc[idx]
 
-    # detect columns
-    ta_cols = {
-        "q": _pick(df, CANDIDATES["ta_q"]),
-        "a": _pick(df, CANDIDATES["ta_a"]),
-        "exp": _pick(df, CANDIDATES["ta_exp"]),
-        "A": _pick(df, CANDIDATES["ta_opt_a"]),
-        "B": _pick(df, CANDIDATES["ta_opt_b"]),
-        "C": _pick(df, CANDIDATES["ta_opt_c"]),
-        "D": _pick(df, CANDIDATES["ta_opt_d"]),
-    }
-    en_cols = {
-        "q": _pick(df, CANDIDATES["en_q"]),
-        "a": _pick(df, CANDIDATES["en_a"]),
-        "exp": _pick(df, CANDIDATES["en_exp"]),
-        "A": _pick(df, CANDIDATES["en_opt_a"]),
-        "B": _pick(df, CANDIDATES["en_opt_b"]),
-        "C": _pick(df, CANDIDATES["en_opt_c"]),
-        "D": _pick(df, CANDIDATES["en_opt_d"]),
-    }
+    # Column name fallbacks (works with your older/newer file headers)
+    ta_q = _get_first(row, ["ta_q", "ta_question", "t_q", "q_ta"])
+    ta_a = _get_first(row, ["ta_a", "ta_opt_a", "ta_A", "ta_optA"])
+    ta_b = _get_first(row, ["ta_b", "ta_opt_b", "ta_B", "ta_optB"])
+    ta_c = _get_first(row, ["ta_c", "ta_opt_c", "ta_C", "ta_optC"])
+    ta_d = _get_first(row, ["ta_d", "ta_opt_d", "ta_D", "ta_optD"])
+    ta_ans = _get_first(row, ["ta_ans", "ta_answer", "answer_ta"])
+    ta_ex  = _get_first(row, ["ta_ex", "ta_explanation", "explanation_ta"])
 
-    # values
-    ta_q  = _row_value(row, ta_cols["q"])
-    ta_a  = _row_value(row, ta_cols["a"])
-    ta_ex = _row_value(row, ta_cols["exp"])
-    ta_opts = _options_from_row(row, (ta_cols["A"], ta_cols["B"], ta_cols["C"], ta_cols["D"]))
+    en_q = _get_first(row, ["en_q", "en_question", "e_q", "q_en"])
+    en_a = _get_first(row, ["en_a", "en_opt_a", "en_A", "en_optA"])
+    en_b = _get_first(row, ["en_b", "en_opt_b", "en_B", "en_optB"])
+    en_c = _get_first(row, ["en_c", "en_opt_c", "en_C", "en_optC"])
+    en_d = _get_first(row, ["en_d", "en_opt_d", "en_D", "en_optD"])
+    en_ans = _get_first(row, ["en_ans", "en_answer", "answer_en"])
+    en_ex  = _get_first(row, ["en_ex", "en_explanation", "explanation_en"])
 
-    en_q  = _row_value(row, en_cols["q"])
-    en_a  = _row_value(row, en_cols["a"])
-    en_ex = _row_value(row, en_cols["exp"])
-    en_opts = _options_from_row(row, (en_cols["A"], en_cols["B"], en_cols["C"], en_cols["D"]))
+    # ---------- 1) EDIT CONSOLE (top) ----------
+    st.markdown("## ஆசிரியர் திருத்தம்")  # Tamil-only heading
 
-    # auto display correct answer
-    auto_ta_ans = ta_a
-    if ta_a.upper() in ("A", "B", "C", "D"):
-        m = {"A":0, "B":1, "C":2, "D":3}
-        auto_ta_ans = ta_opts[m[ta_a.upper()]] if ta_opts[m[ta_a.upper()]] else ta_a
+    # Q + Answer row
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        st.text_area("கேள்வி :", value=ta_q, key="ed_ta_q", height=80)
+    with c2:
+        st.text_input("பதில் / Answer", value=ta_ans, key="ed_ta_ans")
 
-    st.markdown('<h3 class="sme">SME Edit Console / ஆசிரியர் திருத்தம்</h3>', unsafe_allow_html=True)
+    # Options row (NO explicit “A/B/C/D” labels — placeholders only)
+    cA, cB, cC, cD = st.columns([1, 1, 1, 1])
+    with cA:
+        st.text_input(label="A", value=ta_a, key="ed_ta_A",
+                      placeholder="A", label_visibility="collapsed")
+    with cB:
+        st.text_input(label="B", value=ta_b, key="ed_ta_B",
+                      placeholder="B", label_visibility="collapsed")
+    with cC:
+        st.text_input(label="C", value=ta_c, key="ed_ta_C",
+                      placeholder="C", label_visibility="collapsed")
+    with cD:
+        st.text_input(label="D", value=ta_d, key="ed_ta_D",
+                      placeholder="D", label_visibility="collapsed")
 
-    # --- Editor (top) ---
-    st.markdown('<div class="lbl">கேள்வி :</div>', unsafe_allow_html=True)
-    q_col, ans_col = st.columns([2.4, 1.1])
-    with q_col:
-        st.text_area(" ", value=ta_q or "—", key="ed_q", label_visibility="collapsed", height=86)
-    with ans_col:
-        st.markdown('<div class="lbl">பதில் / Answer</div>', unsafe_allow_html=True)
-        st.text_input(" ", value=auto_ta_ans or "—", key="ed_ans", label_visibility="collapsed")
+    # Glossary + Explanation
+    g1, g2 = st.columns([1, 2])
+    with g1:
+        st.text_input("சொல் அகராதி / Glossary (Type the word)", value="",
+                      key="ed_glossary")
+    with g2:
+        st.text_area("விளக்கம் :", value=ta_ex, key="ed_ta_ex", height=110)
 
-    # No "A B C D" labels — just show boxes
-    st.markdown('<div class="lbl">விருப்பங்கள் (A–D) / Options</div>', unsafe_allow_html=True)
-    with st.container():
-        r1, r2 = st.columns(2)
-        with r1:
-            st.text_input(" ", value=ta_opts[0] or "—", key="ed_A", disabled=True, label_visibility="collapsed")
-            st.text_input(" ", value=ta_opts[1] or "—", key="ed_B", disabled=True, label_visibility="collapsed")
-        with r2:
-            st.text_input(" ", value=ta_opts[2] or "—", key="ed_C", disabled=True, label_visibility="collapsed")
-            st.text_input(" ", value=ta_opts[3] or "—", key="ed_D", disabled=True, label_visibility="collapsed")
+    st.markdown("<hr>", unsafe_allow_html=True)
 
-    gl_col, exp_col = st.columns([1.1, 2.4])
-    with gl_col:
-        st.markdown('<div class="lbl">சொல் அகராதி / Glossary (Type the word)</div>', unsafe_allow_html=True)
-        st.text_input(" ", key="ed_gloss", label_visibility="collapsed")
-    with exp_col:
-        st.markdown('<div class="lbl">விளக்கங்கள் :</div>', unsafe_allow_html=True)
-        st.text_area(" ", value=ta_ex or "—", key="ed_exp", label_visibility="collapsed", height=120)
-
-    st.markdown('<hr class="tight">', unsafe_allow_html=True)
-
-    # --- Tamil Original ---
-    st.markdown("### Tamil Original / தமிழ் மூலப் பதிப்பு")
-    opts_line_ta = _format_opt_line(ta_opts)
+    # ---------- 2) TAMIL ORIGINAL (middle) ----------
+    st.markdown("### Tamil Original / தமிழ் மூலப் பதிவு")
+    ta_opts_line = _opts_line(ta_a, ta_b, ta_c, ta_d)
     st.markdown(
         f"""
-<div class="ref-card">
-<p><b>Q:</b> {ta_q or "—"}</p>
-<p><b>Options (A–D):</b> {opts_line_ta}</p>
-<p><b>Answer:</b> {ta_a or "—"}</p>
-<p><b>Explanation:</b> {ta_ex or "—"}</p>
-</div>
-""",
+        <div class="ta-card en-card" style="background:#eef9ee;padding:16px;border:1px solid #cfe8cf;border-radius:8px;">
+          <p><b>Q:</b> {ta_q or "—"}</p>
+          <p><b>Options (A–D):</b> {ta_opts_line}</p>
+          <p><b>Answer:</b> {ta_ans or "—"}</p>
+          <p><b>Explanation:</b> {ta_ex or "—"}</p>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
-    # --- English Version ---
+    # ---------- 3) ENGLISH VERSION (bottom) ----------
     st.markdown("### English Version / ஆங்கிலம்")
-    opts_line_en = _format_opt_line(en_opts)
+    en_opts_line = _opts_line(en_a, en_b, en_c, en_d)
     st.markdown(
         f"""
-<div class="en-card">
-<p><b>Q:</b> {en_q or "—"}</p>
-<p><b>Options (A–D):</b> {opts_line_en}</p>
-<p><b>Answer:</b> {en_a or "—"}</p>
-<p><b>Explanation:</b> {en_ex or "—"}</p>
-</div>
-""",
+        <div class="en-card" style="background:#eef4ff;padding:16px;border:1px solid #d7e3ff;border-radius:8px;">
+          <p><b>Q:</b> {en_q or "—"}</p>
+          <p><b>Options (A–D):</b> {en_opts_line}</p>
+          <p><b>Answer:</b> {en_ans or "—"}</p>
+          <p><b>Explanation:</b> {en_ex or "—"}</p>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
