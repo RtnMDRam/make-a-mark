@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 from typing import List, Optional, Tuple
 
-# ---------- small CSS (fonts, paddings, card look) ----------
+# ---------- CSS: compact, tidy ----------
 _CSS = """
 <style>
 :root{
@@ -21,7 +21,6 @@ h3.sme {margin: 6px 0 10px 0;}
 hr.tight {margin: 14px 0 10px 0;}
 div.block-container{padding-top:1rem;}
 .stTextInput>div>div input[disabled] {opacity:0.85;}
-/* keep option inputs same width/height */
 .opt .stTextInput>div>div, .opt .stTextInput>div>div>input {height:40px;}
 </style>
 """
@@ -30,7 +29,7 @@ def _css_once():
         st.session_state.qc_css_once = True
         st.markdown(_CSS, unsafe_allow_html=True)
 
-# ---------- utilities ----------
+# ---------- column name helpers ----------
 CANDIDATES = {
     "ta_q": ["ta_q", "t_q", "ta_question", "ta_ques", "ques_ta"],
     "ta_a": ["ta_a", "t_ans", "ta_answer", "answer_ta"],
@@ -61,25 +60,24 @@ def _row_value(row: pd.Series, col: Optional[str]) -> str:
     if pd.isna(val): return ""
     return str(val).strip()
 
-def _options_from_row(row: pd.Series, prefix_map: Tuple[str, str, str, str]) -> List[str]:
-    a = _row_value(row, prefix_map[0])
-    b = _row_value(row, prefix_map[1])
-    c = _row_value(row, prefix_map[2])
-    d = _row_value(row, prefix_map[3])
+def _options_from_row(row: pd.Series, cols: Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]) -> List[str]:
+    a = _row_value(row, cols[0])
+    b = _row_value(row, cols[1])
+    c = _row_value(row, cols[2])
+    d = _row_value(row, cols[3])
     return [a, b, c, d]
 
 def _format_opt_line(opts: List[str]) -> str:
-    # If nothing, show short dashes so the line never looks broken
     if not any(o for o in opts):
         return "— | — | — | —"
     parts = [(o if o else "—") for o in opts]
     return " | ".join(parts)
 
-# ---------- main renderer ----------
+# ---------- main ----------
 def render_reference_and_editor():
     """
-    Renders (1) SME editor (top), (2) Tamil Original (middle), (3) English Version (bottom).
-    Works with flexible column names; reads current row from st.session_state.qc_df & qc_idx.
+    Layout: Editor (top) → Tamil Original (middle) → English Version (bottom).
+    Uses st.session_state.qc_df (DataFrame) and st.session_state.qc_idx (int).
     """
     _css_once()
 
@@ -91,7 +89,7 @@ def render_reference_and_editor():
 
     row = df.iloc[idx]
 
-    # --- detect columns once from the dataframe ----
+    # detect columns
     ta_cols = {
         "q": _pick(df, CANDIDATES["ta_q"]),
         "a": _pick(df, CANDIDATES["ta_a"]),
@@ -122,7 +120,7 @@ def render_reference_and_editor():
     en_ex = _row_value(row, en_cols["exp"])
     en_opts = _options_from_row(row, (en_cols["A"], en_cols["B"], en_cols["C"], en_cols["D"]))
 
-    # Auto-answer: if 'ta_a' is a single letter A/B/C/D and that option exists, compute display
+    # auto display answer text if Tamil answer is A/B/C/D
     auto_ta_ans = ta_a
     if ta_a.upper() in ("A", "B", "C", "D"):
         m = {"A":0, "B":1, "C":2, "D":3}
@@ -130,7 +128,7 @@ def render_reference_and_editor():
 
     st.markdown('<h3 class="sme">SME Edit Console / ஆசிரியர் திருத்தம்</h3>', unsafe_allow_html=True)
 
-    # --------------- Editor (top) ----------------
+    # --- Editor (top) ---
     st.markdown('<div class="lbl">கேள்வி :</div>', unsafe_allow_html=True)
     q_col, ans_col = st.columns([2.4, 1.1])
     with q_col:
@@ -143,13 +141,13 @@ def render_reference_and_editor():
     r1c1, r1c2 = st.columns(2)
     r2c1, r2c2 = st.columns(2)
     with r1c1:
-        st.text_input("A", value=ta_opts[0] or "—", key="ed_A", help="Auto Display \"A\"", disabled=True)
+        st.text_input("A", value=ta_opts[0] or "—", key="ed_A", help='Auto Display "A"', disabled=True)
     with r1c2:
-        st.text_input("C", value=ta_opts[2] or "—", key="ed_C", help="Auto Display \"C\"", disabled=True)
+        st.text_input("C", value=ta_opts[2] or "—", key="ed_C", help='Auto Display "C"', disabled=True)
     with r2c1:
-        st.text_input("B", value=ta_opts[1] or "—", key="ed_B", help="Auto Display \"B\"", disabled=True)
+        st.text_input("B", value=ta_opts[1] or "—", key="ed_B", help='Auto Display "B"', disabled=True)
     with r2c2:
-        st.text_input("D", value=ta_opts[3] or "—", key="ed_D", help="Auto Display \"D\"", disabled=True)
+        st.text_input("D", value=ta_opts[3] or "—", key="ed_D", help='Auto Display "D"', disabled=True)
 
     gl_col, exp_col = st.columns([1.1, 2.4])
     with gl_col:
@@ -161,12 +159,11 @@ def render_reference_and_editor():
 
     st.markdown('<hr class="tight">', unsafe_allow_html=True)
 
-    # --------------- Tamil Original (middle) ----------------
-    with st.container():
-        st.markdown("### Tamil Original / தமிழ் மூலப் பதிப்பு")
-        opts_line_ta = _format_opt_line(ta_opts)
-        st.markdown(
-            f"""
+    # --- Tamil Original (middle) ---
+    st.markdown("### Tamil Original / தமிழ் மூலப் பதிப்பு")
+    opts_line_ta = _format_opt_line(ta_opts)
+    st.markdown(
+        f"""
 <div class="ref-card">
 <p><b>Q:</b> {ta_q or "—"}</p>
 <p><b>Options (A–D):</b> {opts_line_ta}</p>
@@ -174,15 +171,14 @@ def render_reference_and_editor():
 <p><b>Explanation:</b> {ta_ex or "—"}</p>
 </div>
 """,
-            unsafe_allow_html=True,
-        )
+        unsafe_allow_html=True,
+    )
 
-    # --------------- English Version (bottom) ----------------
-    with st.container():
-        st.markdown("### English Version / ஆங்கிலம்")
-        opts_line_en = _format_opt_line(en_opts)
-        st.markdown(
-            f"""
+    # --- English Version (bottom) ---
+    st.markdown("### English Version / ஆங்கிலம்")
+    opts_line_en = _format_opt_line(en_opts)
+    st.markdown(
+        f"""
 <div class="en-card">
 <p><b>Q:</b> {en_q or "—"}</p>
 <p><b>Options (A–D):</b> {opts_line_en}</p>
@@ -190,5 +186,5 @@ def render_reference_and_editor():
 <p><b>Explanation:</b> {en_ex or "—"}</p>
 </div>
 """,
-            unsafe_allow_html=True,
-        )
+        unsafe_allow_html=True,
+    )
