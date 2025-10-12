@@ -2,8 +2,7 @@ import re
 import streamlit as st
 import pandas as pd
 
-# ---------------- formatting helpers ----------------
-
+# --------- cleaning helpers ----------
 _TAG_RE = re.compile(r"</?[^>]+>")
 _WS_RE  = re.compile(r"\s+")
 
@@ -11,54 +10,100 @@ def _clean_html(text: str) -> str:
     if text is None:
         return ""
     s = str(text)
-    # convert common HTML breaks to spaces
-    s = s.replace("<br>", " ").replace("<br/>", " ").replace("<br />", " ")
-    s = s.replace("&nbsp;", " ")
+    s = (s.replace("<br>", " ")
+           .replace("<br/>", " ")
+           .replace("<br />", " ")
+           .replace("&nbsp;", " "))
     s = _TAG_RE.sub(" ", s)
     s = _WS_RE.sub(" ", s).strip()
     return s
 
 def _format_options(raw: str) -> str:
-    """
-    Accepts messy HTML / pipe / JSON-like option payloads and returns:
-        "1) A | 2) B | 3) C | 4) D"
-    If nothing found, returns em-dash placeholders.
-    """
     if raw is None or str(raw).strip() == "":
         return "— | — | — | —"
-
     s = _clean_html(str(raw))
 
-    # Try to split by common separators
+    # try common separators
     parts = None
     for sep in ["|", "||", "¶", "¦", "；", ";", " / ", "/", "\n", ","]:
         if sep in s:
-            parts = [p.strip(" [](){}>").strip() for p in s.split(sep)]
+            parts = [p.strip(" [](){}>") for p in s.split(sep)]
             break
-
     if parts is None:
-        # maybe JSON-like list?
+        # JSON-like list?
         if "[" in s and "]" in s:
             s2 = s.strip("[]")
             parts = [p.strip(" '\"") for p in s2.split(",")]
         else:
             parts = [s]
 
-    parts = [p for p in parts if p]  # remove empties
-    # Keep max 4 for A–D; pad with em-dashes
+    parts = [p.strip() for p in parts if p.strip()]
     while len(parts) < 4:
         parts.append("—")
     parts = parts[:4]
-
-    # prefix with 1..4)
-    numbered = [f"{i}) {parts[i-1]}" for i in range(1, 5)]
-    return " | ".join(numbered)
+    return " | ".join(f"{i}) {parts[i-1]}" for i in range(1, 5))
 
 def _dash_if_empty(x) -> str:
     s = _clean_html(x)
     return s if s else "—"
 
-# ---------------- public renderer ----------------
+# --------- fuzzy header matcher ----------
+
+def _norm(h: str) -> str:
+    # normalize to compare headers; remove punctuation/parentheses and lower-case
+    h = str(h or "")
+    h = re.sub(r"\(.*?\)", "", h)   # drop things like (A–D)
+    h = re.sub(r"[:：|/.,\-–—_]+", " ", h)
+    h = _WS_RE.sub(" ", h).strip().lower()
+    return h
+
+ALIASES = {
+    # English
+    "en_q": [
+        "question", "q", "ques", "question text", "en q", "en question"
+    ],
+    "en_opt": [
+        "questionoptions", "options", "opts", "options a d", "options a-d",
+        "en options", "en opt"
+    ],
+    "en_ans": ["answers", "answer", "ans", "en answer"],
+    "en_ex":  ["explanation", "explain", "exp", "en explanation"],
+
+    # Tamil (common labels you use)
+    "ta_q":  ["கேள்வி", "வினா", "வினாக்கள்", "கேள்வி உரை"],
+    "ta_opt":["விருப்பங்கள்", "விருப்பங்கள் a d", "விருப்பங்கள் a-d", "விருப்பம்"],
+    "ta_ans":["பதில்", "விடை"],
+    "ta_ex": ["விளக்கம்", "விளக்கங்கள்"],
+}
+
+def _find_col(df: pd.DataFrame, keys: list[str]) -> str | None:
+    # try exact normalized matches first
+    norm_map = {_norm(c): c for c in df.columns}
+    for k in keys:
+        nk = _norm(k)
+        if nk in norm_map:
+            return norm_map[nk]
+    # fuzzy contains match
+    for k in keys:
+        nk = _norm(k)
+        for n, orig in norm_map.items():
+            if nk and nk in n:
+                return orig
+    return None
+
+def _pick_fields(df: pd.DataFrame) -> dict:
+    return {
+        "en_q":   _find_col(df, ALIASES["en_q"]),
+        "en_opt": _find_col(df, ALIASES["en_opt"]),
+        "en_ans": _find_col(df, ALIASES["en_ans"]),
+        "en_ex":  _find_col(df, ALIASES["en_ex"]),
+        "ta_q":   _find_col(df, ALIASES["ta_q"]),
+        "ta_opt": _find_col(df, ALIASES["ta_opt"]),
+        "ta_ans": _find_col(df, ALIASES["ta_ans"]),
+        "ta_ex":  _find_col(df, ALIASES["ta_ex"]),
+    }
+
+# --------- main renderer ----------
 
 def render_reference_and_editor():
     """
@@ -74,20 +119,21 @@ def render_reference_and_editor():
 
     idx = max(0, min(idx, len(df) - 1))
     row = df.iloc[idx]
+    cols = _pick_fields(df)
 
-    # English fields
-    en_q   = _dash_if_empty(row.get("question"))
-    en_opt = _format_options(row.get("questionOptions"))
-    en_ans = _dash_if_empty(row.get("answers"))
-    en_ex  = _dash_if_empty(row.get("explanation"))
+    # English
+    en_q   = _dash_if_empty(row.get(cols["en_q"]))   if cols["en_q"]   else "—"
+    en_opt = _format_options(row.get(cols["en_opt"])) if cols["en_opt"] else "— | — | — | —"
+    en_ans = _dash_if_empty(row.get(cols["en_ans"])) if cols["en_ans"] else "—"
+    en_ex  = _dash_if_empty(row.get(cols["en_ex"]))  if cols["en_ex"]  else "—"
 
-    # Tamil fields
-    ta_q   = _dash_if_empty(row.get("கேள்வி"))
-    ta_opt = _format_options(row.get("விருப்பங்கள்"))
-    ta_ans = _dash_if_empty(row.get("பதில்"))
-    ta_ex  = _dash_if_empty(row.get("விளக்கம்"))
+    # Tamil
+    ta_q   = _dash_if_empty(row.get(cols["ta_q"]))   if cols["ta_q"]   else "—"
+    ta_opt = _format_options(row.get(cols["ta_opt"])) if cols["ta_opt"] else "— | — | — | —"
+    ta_ans = _dash_if_empty(row.get(cols["ta_ans"])) if cols["ta_ans"] else "—"
+    ta_ex  = _dash_if_empty(row.get(cols["ta_ex"]))  if cols["ta_ex"]  else "—"
 
-    # --- Tamil card (green) ---
+    # Tamil card (green)
     st.markdown(
         f"""
         <div class="ta-card">
@@ -101,7 +147,7 @@ def render_reference_and_editor():
         unsafe_allow_html=True,
     )
 
-    # --- English card (blue) ---
+    # English card (blue)
     st.markdown(
         f"""
         <div class="en-card">
