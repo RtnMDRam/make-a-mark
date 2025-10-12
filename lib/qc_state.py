@@ -35,7 +35,6 @@ _LAYOUT_CSS = """
 </style>
 """
 
-# ===== Helper functions for section wrappers =====
 def _section_open(cls: str, title: str):
     st.markdown(
         f"""<div class="section {cls}">
@@ -46,7 +45,7 @@ def _section_open(cls: str, title: str):
 def _section_close():
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ===== Dummy placeholders for your real content renderers =====
+# ===== Placeholder content =====
 def _editor_tamil():
     st.text_area("Editable Tamil Content (SME Panel)", "", height=200)
 
@@ -66,17 +65,17 @@ def render_reference_and_editor():
     """
     st.markdown(_LAYOUT_CSS, unsafe_allow_html=True)
 
-    # TOP: SME edit (Tamil)
+    # TOP
     _section_open("ed", "SME Panel / ஆசிரியர் அங்கீகாரம் வழங்கும் பகுதி")
     _editor_tamil()
     _section_close()
 
-    # MIDDLE: Tamil non-editable
+    # MIDDLE
     _section_open("ta", "தமிழ் மூலப் பதிவு")
     _reference_tamil()
     _section_close()
 
-    # BOTTOM: English non-editable
+    # BOTTOM
     _section_open("en", "English Version")
     _reference_english()
     _section_close()
