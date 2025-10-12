@@ -1,116 +1,156 @@
-# lib/qc_state.py
-from __future__ import annotations
 import streamlit as st
 import pandas as pd
 
-def _css_editor_once():
-    if st.session_state.get("_qc_css_done"): 
-        return
-    st.session_state["_qc_css_done"] = True
-    st.markdown("""
-    <style>
-      .h6{font-size:15px;font-weight:700;margin:8px 0 4px;}
-      .card{
-        background:#f6f9ff;border:1px solid #cfe0ff;border-radius:12px;padding:10px 14px;
-      }
-      .card.ta{background:#f6fff6;border-color:#cfead1;}
-      .sm-title{font-size:18px;font-weight:700;margin:6px 0 10px;}
-      .rowgap > div{margin-bottom:8px;}
-      .stTextInput>div>div>input{font-size:16px;}
-      .stTextArea textarea{font-size:16px; line-height:1.4;}
-      .tightbox .stTextArea>div{margin-bottom:0;}
-    </style>
-    """, unsafe_allow_html=True)
+# ---------- tiny utilities ----------
+def _val(x):
+    if pd.isna(x) or x is None:
+        return "—"
+    x = str(x).strip()
+    return x if x else "—"
 
-def _field(df: pd.DataFrame, row: int, col: str, label: str, key: str, area=False):
-    """No default+set clash: we only set value if key absent."""
-    if key not in st.session_state:
-        st.session_state[key] = str(df.at[row, col]) if col in df.columns else ""
-    if area:
-        return st.text_area(label, key=key, label_visibility="collapsed", height=84)
-    return st.text_input(label, key=key, label_visibility="collapsed")
-
-def render_reference_and_editor(editor_first: bool=True):
+def _options_row(prefix, row):
     """
-    Shows (1) editor grid, (2) Tamil Original, (3) English Original when editor_first=True.
-    Expects st.session_state.qc_df and qc_idx.
+    Build 'A | B | C | D' string for either Tamil or English.
+    prefix: 'ta_' for Tamil or 'en_' for English; supports both narrow & wide schemas.
+    Tries these keys: {prefix}A,{prefix}B,{prefix}C,{prefix}D then falls back to
+    {prefix}opt_a... if present. Missing values show as '—'.
     """
-    _css_editor_once()
-    if "qc_df" not in st.session_state or st.session_state.qc_df.empty:
-        st.info("Paste a link or upload a file at the top strip to begin.")
-        return
+    keys_try = [
+        f"{prefix}A", f"{prefix}B", f"{prefix}C", f"{prefix}D",
+        f"{prefix}opt_a", f"{prefix}opt_b", f"{prefix}opt_c", f"{prefix}opt_d",
+    ]
+    # pick first 4 unique keys that exist for this row
+    present = [k for k in keys_try if k in row]
+    seen = set()
+    seq = []
+    for k in present:
+        base = k.split("_")[-1].lower()
+        if base in ("a", "b", "c", "d") and base not in seen:
+            seq.append(k)
+            seen.add(base)
+        if len(seq) == 4:
+            break
+    # if still short, pad
+    while len(seq) < 4:
+        seq.append(None)
 
-    df: pd.DataFrame = st.session_state.qc_df
-    i = st.session_state.get("qc_idx", 0)
+    vals = [ _val(row.get(k)) if k else "—" for k in seq ]
+    return " | ".join(vals)
 
-    # ---- 1) EDITOR FIRST ------------------------------------------------------
-    st.markdown('<div class="sm-title">SME Edit Console / ஆசிரியர் திருத்தம்</div>', unsafe_allow_html=True)
-    # Q
-    _field(df, i, "ta_question", "Q", "q_ta", area=True)
-
-    # ABCD grid (two columns, tight)
-    c1, c2 = st.columns(2)
-    with c1:
-        _field(df, i, "ta_opt_a", "A", "opt_a")
-        _field(df, i, "ta_opt_c", "C", "opt_c")
-    with c2:
-        _field(df, i, "ta_opt_b", "B", "opt_b")
-        _field(df, i, "ta_opt_d", "D", "opt_d")
-
-    g1, g2 = st.columns([1,1])
-    with g1:
-        st.caption("சொல் அகராதி / Glossary")
-        _field(df, i, "glossary", "Glossary", "glossary_word")
-    with g2:
-        st.caption("பதில் / Answer")
-        _field(df, i, "ta_answer", "Answer", "ans_ta")
-
-    st.caption("விளக்கங்கள் :")
-    _field(df, i, "ta_explanation", "Explanation", "exp_ta", area=True)
-
-    st.write("")  # small spacer
-
-    # ---- 2) TAMIL ORIGINAL ----------------------------------------------------
-    st.markdown('<div class="h6">Tamil Original / தமிழ் மூலப் பதிப்பு</div>', unsafe_allow_html=True)
+def _css_once_reference():
     st.markdown(
-        _ref_card(
-            df, i,
-            q_col="ta_question",
-            a_col="ta_answer",
-            o_cols=["ta_opt_a","ta_opt_b","ta_opt_c","ta_opt_d"],
-            e_col="ta_explanation",
-            ta=True
-        ),
-        unsafe_allow_html=True
+        """
+        <style>
+        /* cards */
+        .ref-card{border:1px solid rgba(0,0,0,.08); border-radius:10px; padding:14px 16px; margin:10px 0;}
+        .ref-ta {background:#EFF8EE;}     /* light palm green */
+        .ref-en {background:#EAF2FD;}     /* light palm blue  */
+        /* headings */
+        .ref-title{font-weight:700; font-size:18px; margin:2px 0 8px 0;}
+        .field-label{font-size:13px; color:#2f4f3a; font-weight:600; margin:0 0 6px 0;}
+        .minor-label{font-size:13px; color:#3a3a3a; font-weight:600; margin:0 0 6px 0;}
+        .boxed{background:#fff; border:1px solid rgba(0,0,0,.12); border-radius:8px; padding:10px 12px;}
+        .tight{margin-top:6px; margin-bottom:8px;}
+        .gap8{height:8px;}
+        .gap12{height:12px;}
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
-    # ---- 3) ENGLISH ORIGINAL --------------------------------------------------
-    st.markdown('<div class="h6">English Version / ஆங்கிலம்</div>', unsafe_allow_html=True)
-    st.markdown(
-        _ref_card(
-            df, i,
-            q_col="en_question",
-            a_col="en_answer",
-            o_cols=["en_opt_a","en_opt_b","en_opt_c","en_opt_d"],
-            e_col="en_explanation",
-            ta=False
-        ),
-        unsafe_allow_html=True
-    )
-
-def _ref_card(df, i, q_col, a_col, o_cols, e_col, ta=False):
-    def val(c): 
-        return (str(df.at[i,c]) if c in df.columns and pd.notna(df.at[i,c]) else "").strip()
-
-    q = val(q_col); a = val(a_col); e = val(e_col)
-    o = [val(c) for c in o_cols]
-    cls = "card ta" if ta else "card"
-    html = f"""
-    <div class="{cls}">
-      <div><b>Q:</b> {q}</div>
-      <div><b>Options (A–D):</b> A) {o[0]} &nbsp;|&nbsp; B) {o[1]} &nbsp;|&nbsp; C) {o[2]} &nbsp;|&nbsp; D) {o[3]}</div>
-      <div><b>Answer:</b> {a}</div>
-      <div><b>Explanation:</b> {e}</div>
-    </div>
+# ---------- main renderer ----------
+def render_reference_and_editor():
     """
-    return html
+    Renders SME Edit Console (first), then Tamil Original, then English Version.
+
+    Requires:
+      st.session_state.qc_df  : pandas.DataFrame
+      st.session_state.qc_idx : int (current row)
+    """
+    _css_once_reference()
+
+    df = st.session_state.get("qc_df")
+    idx = st.session_state.get("qc_idx", 0)
+    if not isinstance(df, pd.DataFrame) or df.empty or idx not in df.index:
+        st.info("Paste a link or upload a file at the top strip, then press **Load**.")
+        return
+
+    row = df.loc[idx].to_dict()
+
+    # -------- SME Edit Console (TOP) --------
+    st.markdown("### SME Edit Console / ஆசிரியர் திருத்தம்")
+    q_col, ans_col = st.columns([3, 2], gap="small")
+    with q_col:
+        st.text_area(
+            "கேள்வி :", _val(row.get("ta_q") or row.get("q_ta") or row.get("q_tamil")),
+            key=f"ta_q_{idx}", height=84
+        )
+    with ans_col:
+        st.text_input(
+            "பதில் / Answer", _val(row.get("ta_answer") or row.get("answer_ta") or row.get("ans_tamil")),
+            key=f"ta_ans_{idx}"
+        )
+
+    a1,a2 = st.columns(2, gap="small")
+    with a1:
+        a_left1, a_left2 = st.columns(2, gap="small")
+        st.text_input("A", _val(row.get("ta_A") or row.get("ta_opt_a")), key=f"ta_A_{idx}")
+        a_left2.text_input("B", _val(row.get("ta_B") or row.get("ta_opt_b")), key=f"ta_B_{idx}")
+    with a2:
+        a_right1, a_right2 = st.columns(2, gap="small")
+        a_right1.text_input("C", _val(row.get("ta_C") or row.get("ta_opt_c")), key=f"ta_C_{idx}")
+        a_right2.text_input("D", _val(row.get("ta_D") or row.get("ta_opt_d")), key=f"ta_D_{idx}")
+
+    gl_col, ex_col = st.columns([2,3], gap="small")
+    with gl_col:
+        st.text_input("சொல் அகராதி / Glossary (Type the word)", "", key=f"gloss_{idx}")
+    with ex_col:
+        st.text_area("விளக்கங்கள் :", _val(row.get("ta_explain") or row.get("explain_ta")), key=f"ta_exp_{idx}", height=84)
+
+    st.markdown("<div class='gap12'></div>", unsafe_allow_html=True)
+
+    # -------- Tamil Original (MIDDLE) --------
+    st.markdown("<div class='ref-card ref-ta'>", unsafe_allow_html=True)
+    st.markdown("<div class='ref-title'>Tamil Original / தமிழ் மூலப் பதிப்பு</div>", unsafe_allow_html=True)
+
+    q_ta = _val(row.get("ta_q") or row.get("q_ta") or row.get("q_tamil"))
+    opts_ta = _options_row("ta_", row)
+    ans_ta = _val(row.get("ta_answer") or row.get("answer_ta") or row.get("ans_tamil"))
+    exp_ta = _val(row.get("ta_explain") or row.get("explain_ta"))
+
+    st.markdown("<div class='field-label'>Q:</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='boxed tight'>{q_ta}</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='field-label'>Options (A–D):</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='boxed tight'>{opts_ta}</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='field-label'>Answer:</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='boxed tight'>{ans_ta}</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='field-label'>Explanation:</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='boxed'>{exp_ta}</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)  # end TA card
+
+    st.markdown("<div class='gap12'></div>", unsafe_allow_html=True)
+
+    # -------- English Version (BOTTOM) --------
+    st.markdown("<div class='ref-card ref-en'>", unsafe_allow_html=True)
+    st.markdown("<div class='ref-title'>English Version / ஆங்கிலம்</div>", unsafe_allow_html=True)
+
+    q_en = _val(row.get("en_q") or row.get("q_en") or row.get("question"))
+    opts_en = _options_row("en_", row)
+    ans_en = _val(row.get("en_answer") or row.get("answer_en") or row.get("answer"))
+    exp_en = _val(row.get("en_explain") or row.get("explain_en") or row.get("explanation"))
+
+    st.markdown("<div class='minor-label'>Q:</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='boxed tight'>{q_en}</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='minor-label'>Options (A–D):</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='boxed tight'>{opts_en}</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='minor-label'>Answer:</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='boxed tight'>{ans_en}</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='minor-label'>Explanation:</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='boxed'>{exp_en}</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)  # end EN card
