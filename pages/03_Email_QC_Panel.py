@@ -6,12 +6,10 @@ from lib.qc_state import render_layout_only
 st.set_page_config(page_title="SME QC Panel", layout="wide")
 
 def main():
-    # 1) Top strip: date/time + buttons + link/file inputs
-    render_top_strip()
+    render_top_strip()  # top buttons + link/file
 
-    # 2) After Load, show **layout only** (no data wiring yet)
     if st.session_state.get("qc_df", None) is not None:
-        render_layout_only()   # Editor (top) → Tamil (middle) → English (bottom)
+        render_layout_only()   # Editor (top) → Tamil → English
     else:
         st.info("Paste a link or upload a file at the top strip, then press **Load**.")
 
