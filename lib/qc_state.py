@@ -1,53 +1,49 @@
 # lib/qc_state.py
 import streamlit as st
 
-# ---------- CSS: single separator line + fixed heights ----------
+# ---------- CSS: boxed panels, fixed heights, no vertical gaps ----------
 _LAYOUT_CSS = """
 <style>
+/* Hide sidebar & tighten top/bottom padding */
 [data-testid="stSidebar"]{display:none !important;}
 .block-container{padding-top:10px;padding-bottom:10px;}
 
-/* PANELS (no box border; we draw ONE top line via ::before) */
+/* PANELS AS BOXES (single outline; panels touch vertically) */
 .panel{
   position:relative;
-  background:#ffffff;
-  padding:14px 16px 14px 16px;
-  margin:0;                      /* panels touch */
-  overflow:auto;                 /* scroll inside if content exceeds height */
+  background:#fff;
+  padding:14px 16px;
+  margin:0;                 /* panels touch each other (no gaps) */
+  border:1.6px solid #94a3b8; /* default outline */
+  border-radius:8px;
+  overflow:auto;            /* internal scroll if needed */
 }
 
-/* single separator line */
-.panel::before{
-  content:"";
-  display:block;
-  height:0;
-  border-top:1.6px solid #64748b;  /* visible, single line */
-  margin:0 0 12px 0;
-}
+/* Color per panel (outline color only) */
+.panel.ed{ border-color:#475569; }  /* editable Tamil (top) */
+.panel.ta{ border-color:#16a34a; }  /* Tamil ref (middle) */
+.panel.en{ border-color:#2563eb; }  /* English ref (bottom) */
 
-/* color per section (only the single line) */
-.panel.ed::before{ border-color:#475569; }  /* top, editable Tamil */
-.panel.ta::before{ border-color:#16a34a; }  /* middle, Tamil reference */
-.panel.en::before{ border-color:#2563eb; }  /* bottom, English reference */
+/* STACK WITHOUT GAPS: remove extra margins Streamlit inserts around markdown blocks */
+.panel + .panel{ margin-top:0; }
+.block-container > div:has(> .panel) + div:has(> .panel){ margin-top:0; }
 
-/* fixed heights using viewport units (approx: 40% / 25% / 25%) */
+/* Fixed heights (approx 40% / 25% / 25% of viewport) */
 .panel.ed{  min-height:40vh; }
 .panel.ta{  min-height:25vh; }
 .panel.en{  min-height:25vh; }
 
-/* headings & labels */
+/* Headings & rows */
 .panel h4{ margin:0 0 10px 0; font-size:18px; font-weight:700; color:#111827; }
 .row{ display:grid; grid-template-columns:auto 1fr; gap:8px; align-items:start; }
 .label{ font-weight:600; color:#334155; }
-.sep{ opacity:.8; }
+.sep{ opacity:.85; }
 
-/* compact inputs */
+/* Compact inputs */
 .stTextArea textarea, .stTextInput input{ font-size:16px; }
 
-/* remove any accidental lines/dividers */
-hr, .stDivider, [data-testid="stDivider"], .ta-bar, .en-bar, .ed-bar{
-  display:none !important; height:0 !important; margin:0 !important; padding:0 !important; border:0 !important;
-}
+/* Kill any stray rules/dividers */
+hr, .stDivider, [data-testid="stDivider"]{ display:none !important; height:0 !important; margin:0 !important; }
 </style>
 """
 
