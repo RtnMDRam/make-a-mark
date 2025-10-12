@@ -2,8 +2,31 @@ import re
 import streamlit as st
 import pandas as pd
 
-# ----------------- helpers -----------------
+# ---------- one-time CSS (keeps order + spacing stable) ----------
+def _css_once():
+    if st.session_state.get("_qc_css_done"):  # don’t re-inject
+        return
+    st.session_state["_qc_css_done"] = True
+    st.markdown(
+        """
+        <style>
+          .ta-card, .en-card{
+            border-radius: 10px; padding:16px 18px; margin:0; 
+          }
+          .ta-card{ background:#eaf6e9; }
+          .en-card{ background:#e8efff; margin-top:14px; } /* fixes the gap & keeps EN below */
+          .badge{
+            display:inline-block; background:#e9eef4; padding:4px 10px; 
+            border-radius:12px; font-size:13px; color:#3b4a5a; margin-bottom:6px;
+          }
+          .field-label{ font-weight:700; }
+          p{ margin:8px 0; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
+# ---------- helpers ----------
 _TAG_RE = re.compile(r"</?[^>]+>")
 _WS_RE  = re.compile(r"\s+")
 
@@ -13,7 +36,7 @@ def _has_tamil(s: str) -> bool:
 def _norm(s: str) -> str:
     s = str(s or "")
     s = re.sub(r"\(.*?\)", "", s)
-    s = re.sub(r"[:：|/.,\-–—_]+", " ", s)
+    s = re.sub(r"[:：|/.,\\-–—_]+", " ", s)
     s = _WS_RE.sub(" ", s).strip().lower()
     return s
 
@@ -37,7 +60,6 @@ def _format_options(raw) -> str:
     if raw is None or str(raw).strip() == "":
         return "— | — | — | —"
     s = _clean_html(str(raw))
-    # try common separators
     parts = None
     for sep in ["|", "||", "¶", "¦", "；", ";", " / ", "/", "\n", ","]:
         if sep in s:
@@ -52,26 +74,25 @@ def _format_options(raw) -> str:
     while len(parts) < 4:
         parts.append("—")
     parts = parts[:4]
-    return " | ".join(f"{i}) {parts[i-1]}" for i in range(1, 5))
+    # show as A/B/C/D lines like your screenshot
+    return " | ".join(parts)
 
-# ----------------- column picking -----------------
-
+# ---------- header picking ----------
 # Tamil headers
-TA_KEYS = {
+TA_MAP = {
     "q":   ["கேள்வி", "வினா", "வினாக்கள்"],
     "opt": ["விருப்பங்கள்", "விருப்பம்"],
     "ans": ["பதில்", "விடை"],
     "ex":  ["விளக்கம்", "விளக்கங்கள்"],
 }
 
-# English headers (Latin)
+# English headers (Latin only)
 EN_EXACT = {
     "q":   ["question"],
     "opt": ["questionOptions", "question_options"],
     "ans": ["answers", "answer"],
     "ex":  ["explanation", "explain"],
 }
-# extra loose aliases (still Latin-only)
 EN_ALIASES = {
     "q":   ["en question", "ques", "q", "question text"],
     "opt": ["options", "options a d", "options a-d", "en options", "en opt"],
@@ -79,58 +100,38 @@ EN_ALIASES = {
     "ex":  ["en explanation", "exp"],
 }
 
-def _find_strict(df: pd.DataFrame, candidates: list[str]) -> str | None:
-    """Match only among NON-Tamil headers."""
-    latin_cols = [c for c in df.columns if not _has_tamil(c)]
-    norm_map = {_norm(c): c for c in latin_cols}
-    # exact/normalized
-    for k in candidates:
+def _find_from(df: pd.DataFrame, cols: list[str], *, tamil: bool) -> str | None:
+    pool = [c for c in df.columns if _has_tamil(c) == tamil]
+    norm = {_norm(c): c for c in pool}
+    for k in cols:
         nk = _norm(k)
-        if nk in norm_map:
-            return norm_map[nk]
-    # contains
-    for k in candidates:
+        if nk in norm:
+            return norm[nk]
+    for k in cols:
         nk = _norm(k)
-        for n, orig in norm_map.items():
-            if nk and nk in n:
-                return orig
-    return None
-
-def _find_tamil(df: pd.DataFrame, candidates: list[str]) -> str | None:
-    ta_cols = [c for c in df.columns if _has_tamil(c)]
-    norm_map = {_norm(c): c for c in ta_cols}
-    for k in candidates:
-        nk = _norm(k)
-        if nk in norm_map:
-            return norm_map[nk]
-    for k in candidates:
-        nk = _norm(k)
-        for n, orig in norm_map.items():
+        for n, orig in norm.items():
             if nk and nk in n:
                 return orig
     return None
 
 def _pick_fields(df: pd.DataFrame) -> dict:
-    # Tamil: must pick Tamil-script headers
-    ta_q   = _find_tamil(df, TA_KEYS["q"])
-    ta_opt = _find_tamil(df, TA_KEYS["opt"])
-    ta_ans = _find_tamil(df, TA_KEYS["ans"])
-    ta_ex  = _find_tamil(df, TA_KEYS["ex"])
+    ta_q   = _find_from(df, TA_MAP["q"],   tamil=True)
+    ta_opt = _find_from(df, TA_MAP["opt"], tamil=True)
+    ta_ans = _find_from(df, TA_MAP["ans"], tamil=True)
+    ta_ex  = _find_from(df, TA_MAP["ex"],  tamil=True)
 
-    # English: STRICT — must pick non-Tamil headers only
-    en_q   = _find_strict(df, EN_EXACT["q"])   or _find_strict(df, EN_ALIASES["q"])
-    en_opt = _find_strict(df, EN_EXACT["opt"]) or _find_strict(df, EN_ALIASES["opt"])
-    en_ans = _find_strict(df, EN_EXACT["ans"]) or _find_strict(df, EN_ALIASES["ans"])
-    en_ex  = _find_strict(df, EN_EXACT["ex"])  or _find_strict(df, EN_ALIASES["ex"])
+    en_q   = _find_from(df, EN_EXACT["q"]  + EN_ALIASES["q"],   tamil=False)
+    en_opt = _find_from(df, EN_EXACT["opt"]+ EN_ALIASES["opt"], tamil=False)
+    en_ans = _find_from(df, EN_EXACT["ans"]+ EN_ALIASES["ans"], tamil=False)
+    en_ex  = _find_from(df, EN_EXACT["ex"] + EN_ALIASES["ex"],  tamil=False)
 
-    return {
-        "ta_q": ta_q, "ta_opt": ta_opt, "ta_ans": ta_ans, "ta_ex": ta_ex,
-        "en_q": en_q, "en_opt": en_opt, "en_ans": en_ans, "en_ex": en_ex,
-    }
+    return dict(ta_q=ta_q, ta_opt=ta_opt, ta_ans=ta_ans, ta_ex=ta_ex,
+                en_q=en_q, en_opt=en_opt, en_ans=en_ans, en_ex=en_ex)
 
-# ----------------- main renderer -----------------
-
+# ---------- main renderer ----------
 def render_reference_and_editor():
+    _css_once()
+
     df: pd.DataFrame = st.session_state.get("qc_df")
     idx: int = int(st.session_state.get("qc_idx", 0))
 
@@ -148,10 +149,9 @@ def render_reference_and_editor():
     ta_ans = _dash_if_empty(row.get(cols["ta_ans"]))  if cols["ta_ans"] else "—"
     ta_ex  = _dash_if_empty(row.get(cols["ta_ex"]))   if cols["ta_ex"]  else "—"
 
-    # English values (strict + script safety)
+    # English values (strict Latin, never show Tamil script)
     def _safe_en(val):
         s = _dash_if_empty(val)
-        # *** Never show Tamil in English card ***
         return "—" if _has_tamil(s) else s
 
     en_q   = _safe_en(row.get(cols["en_q"]))    if cols["en_q"]   else "—"
@@ -159,7 +159,7 @@ def render_reference_and_editor():
     en_ans = _safe_en(row.get(cols["en_ans"]))  if cols["en_ans"] else "—"
     en_ex  = _safe_en(row.get(cols["en_ex"]))   if cols["en_ex"]  else "—"
 
-    # Tamil card
+    # ----- Tamil card (always first) -----
     st.markdown(
         f"""
         <div class="ta-card">
@@ -173,7 +173,7 @@ def render_reference_and_editor():
         unsafe_allow_html=True,
     )
 
-    # English card
+    # ----- English card (always second, fixed gap via CSS) -----
     st.markdown(
         f"""
         <div class="en-card">
