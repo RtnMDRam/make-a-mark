@@ -1,109 +1,59 @@
 # lib/qc_state.py
 import streamlit as st
 
-# ---------- CSS: proper visible box outlines, no vertical gap ----------
+# — CSS for three tight boxes only (no inner widgets) —
 _LAYOUT_CSS = """
 <style>
-[data-testid="stSidebar"] {display:none !important;}
-.block-container {padding-top:10px;padding-bottom:10px;}
+/* hide sidebar, tighten page */
+[data-testid="stSidebar"]{display:none !important;}
+.block-container{padding-top:8px; padding-bottom:8px;}
 
-/* PANEL BOXES */
-.panel {
-  background: #ffffff !important;
-  border: 2px solid #1f2937 !important; /* dark grey visible outline */
-  border-radius: 6px;
-  padding: 16px 18px;
-  margin: 0;
-  overflow: auto;
-  box-shadow: 0px 0px 4px rgba(0,0,0,0.05);
+/* remove default gaps between our cards */
+.stack{display:grid; grid-template-rows:auto auto auto; row-gap:0;}
+
+/* generic card */
+.card{
+  margin:0;                 /* no outer gap */
+  padding:12px;             /* small inner padding */
+  border:2px solid #d0d7de; /* single clear outline */
+  border-radius:8px;
+  background:#fff;
 }
 
-/* Touching panels (no gap) */
-.panel + .panel {
-  margin-top: 0 !important;
-  border-top: none !important; /* remove double borders when stacked */
+/* color accents per section (only border color) */
+.ed-card{border-color:#1f4fbf;}  /* SME editable (blue) */
+.ta-card{border-color:#199c4b;}  /* Tamil ref (green)  */
+.en-card{border-color:#316dca;}  /* English ref (blue) */
+
+/* titles */
+.card h4{
+  margin:0 0 6px 0;
+  font-size:20px; font-weight:700;
 }
 
-/* Section colors for clarity */
-.panel.ed {border-color: #334155 !important;}  /* SME editable Tamil */
-.panel.ta {border-color: #15803d !important;}  /* Tamil reference */
-.panel.en {border-color: #1d4ed8 !important;}  /* English reference */
-
-/* Fixed height layout: 40%, 25%, 25% */
-.panel.ed {min-height: 40vh;}
-.panel.ta {min-height: 25vh;}
-.panel.en {min-height: 25vh;}
-
-/* Headings */
-.panel h4 {
-  margin: 0 0 12px 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: #111827;
-}
-
-/* Label rows */
-.row {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 8px;
-  align-items: start;
-}
-.label {font-weight: 600; color: #334155;}
-.sep {opacity: 0.8;}
-
-/* Compact text inputs */
-.stTextArea textarea, .stTextInput input {
-  font-size: 16px;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-}
-
-/* Remove extra spacing between panels */
-hr, .stDivider, [data-testid="stDivider"] {
-  display: none !important;
-  height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
+/* heights: ~40% / 25% / 25% of viewport */
+.ed-card{min-height:40vh;}
+.ta-card{min-height:25vh;}
+.en-card{min-height:25vh;}
 </style>
 """
 
-def _line(label, value="—"):
+def render_boxes_only():
+    """Show only three touching boxes with titles; no content."""
+    st.markdown(_LAYOUT_CSS, unsafe_allow_html=True)
     st.markdown(
-        f"""
-        <div class="row">
-            <div class="label">{label}</div>
-            <div class="sep">: {value}</div>
+        """
+        <div class="stack">
+          <div class="card ed-card">
+            <h4>SME Panel / ஆசிரியர் அங்கீகாரம் வழங்கும் பகுதி</h4>
+          </div>
+          <div class="card ta-card">
+            <h4>தமிழ் மூலப் பதிப்பு</h4>
+          </div>
+          <div class="card en-card">
+            <h4>English Version</h4>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-def _editor_tamil():
-    st.markdown('<div class="panel ed">', unsafe_allow_html=True)
-    st.markdown('<h4>SME Panel / ஆசிரியர் அங்கீகாரம் வழங்கும் பகுதி</h4>', unsafe_allow_html=True)
-    st.text_area("கேள்வி", value="", height=80, label_visibility="collapsed", key="ed_q_ta")
-    st.text_input("விருப்பங்கள் (A–D)", value="", label_visibility="visible", key="ed_opts_ta")
-    st.text_input("பதில்", value="", label_visibility="visible", key="ed_ans_ta")
-    st.text_area("விளக்கம்", value="", height=120, label_visibility="visible", key="ed_ex_ta")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-def _reference_tamil():
-    st.markdown('<div class="panel ta">', unsafe_allow_html=True)
-    st.markdown('<h4>தமிழ் மூலப் பதிப்பு</h4>', unsafe_allow_html=True)
-    _line("கேள்வி"); _line("விருப்பங்கள் (A–D)"); _line("பதில்"); _line("விளக்கம்")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-def _reference_english():
-    st.markdown('<div class="panel en">', unsafe_allow_html=True)
-    st.markdown('<h4>English Version</h4>', unsafe_allow_html=True)
-    _line("Q"); _line("Options (A–D)"); _line("Answer"); _line("Explanation")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-def render_layout_only():
-    """Fixed order: Editor (top) → Tamil reference (middle) → English reference (bottom)."""
-    st.markdown(_LAYOUT_CSS, unsafe_allow_html=True)
-    _editor_tamil()
-    _reference_tamil()
-    _reference_english()
