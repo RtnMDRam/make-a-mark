@@ -1,12 +1,10 @@
 # lib/__init__.py
-from .theme import apply_theme
-from .io_utils import read_bilingual, export_qc
-from .glossary import render_matches, sort_glossary
-from .qc_state import auto_guess_map, ensure_work, step_columns
+# Keep __init__ tiny so importing `lib` never pulls old names.
+
+from .top_strip import render_top_strip           # top strip (date/time + buttons + loader)
+from .qc_state  import render_reference_and_editor  # editor + reference panels
 
 __all__ = [
-    "apply_theme",
-    "read_bilingual", "export_qc",
-    "render_matches", "sort_glossary",
-    "auto_guess_map", "ensure_work", "step_columns",
+    "render_top_strip",
+    "render_reference_and_editor",
 ]
