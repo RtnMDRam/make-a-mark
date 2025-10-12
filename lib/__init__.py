@@ -1,15 +1,16 @@
-# lib/__init__.py
-# -------------------------------------------------------------------
-# Initialize the "lib" package and expose key helper modules for Streamlit.
-# This version is cleaned up for the new 3-panel SME QC layout.
-# -------------------------------------------------------------------
+# make-a-mark/lib/__init__.py
+"""
+Library exports for the SME QC Panel.
+Keep this in sync with what pages import.
+"""
 
-# Common library imports
-import streamlit as st
-
-# Submodules (only the active ones)
+# Top controls (Save / Next / Download + Load)
 from .top_strip import render_top_strip
-from .qc_state import render_layout_only
 
-# You can add new utility functions or constants here in future if needed.
-__all__ = ["render_top_strip", "render_layout_only"]
+# Main renderer (boxes + non-editable content + editor)
+from .qc_state import render_reference_and_editor
+
+__all__ = [
+    "render_top_strip",
+    "render_reference_and_editor",
+]
