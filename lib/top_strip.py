@@ -1,193 +1,125 @@
 # lib/top_strip.py
-# Compact top strip for SME Panel (iPad-friendly)
-# - Row 1: Date  |  Title  |  Time
-# - Row 2: Save, Mark Complete, Save & Next, Download QC
-# - Row 3: Link + Load  and  File Uploader (very compact)
-#
-# Exposes: render_top_strip()
-# Side effects:
-#   - sets st.session_state.qc_src, .qc_work (copy), .qc_idx = 0 (when loading)
-#   - calls on_save(), on_mark_complete(), on_next() if provided
-
-from __future__ import annotations
 import io
 import re
-from typing import Callable, Optional
-
 import pandas as pd
 import streamlit as st
 
+REQ_COLS_CANON = [
+    "ID",
+    "Question (English)", "Options (English)", "Answer (English)", "Explanation (English)",
+    "Question (Tamil)",   "Options (Tamil)",   "Answer (Tamil)",   "Explanation (Tamil)",
+]
 
-# ---------- helpers ----------
-def _read_any(file_or_bytes) -> pd.DataFrame:
-    """Read CSV or Excel from an uploaded file or bytes buffer."""
-    # Try CSV first; fall back to Excel
-    try:
-        return pd.read_csv(file_or_bytes)
-    except Exception:
-        file_or_bytes.seek(0)
-    try:
-        return pd.read_excel(file_or_bytes)
-    except Exception as e:
-        raise RuntimeError(f"Could not open file. Expecting CSV/XLSX. Details: {e}")
+# map many possible headers -> canonical headers
+COL_ALIASES = {
+    "ID": ["ID","Id","id","_id","_ID","Number","Row ID","Row"],
+    "Question (English)": ["Question (English)","Q_EN","Question_English","English Question","EN_Q"],
+    "Options (English)" : ["Options (English)","OPT_EN","Options_English","EN_Options","Options (A–D)","Options (A-D)"],
+    "Answer (English)"  : ["Answer (English)","ANS_EN","Answer_English","EN_Answer","Answer"],
+    "Explanation (English)": ["Explanation (English)","EXP_EN","Explanation_English","EN_Explanation","Explanation"],
+    "Question (Tamil)"  : ["Question (Tamil)","Q_TA","Question_Tamil","TA_Q","Tamil Question"],
+    "Options (Tamil)"   : ["Options (Tamil)","OPT_TA","Options_Tamil","TA_Options"],
+    "Answer (Tamil)"    : ["Answer (Tamil)","ANS_TA","Answer_Tamil","TA_Answer"],
+    "Explanation (Tamil)": ["Explanation (Tamil)","EXP_TA","Explanation_Tamil","TA_Explanation"],
+}
 
+def _pick(name, cols_lower):
+    for alias in COL_ALIASES[name]:
+        al = alias.lower()
+        if al in cols_lower: return cols_lower[al]
+    return None
 
-def _read_from_link(url: str) -> pd.DataFrame:
-    """Accepts public CSV/XLSX/Drive links and returns a DataFrame."""
-    u = (url or "").strip()
-    if not u:
-        raise RuntimeError("Empty link.")
-    # Convert public Drive share -> direct download
-    if "drive.google.com" in u:
-        m = re.search(r"/file/d/([^/]+)/", u)
-        if m:
-            u = f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    cols_lower = {c.lower(): c for c in df.columns}
+    out_cols = {}
+    missing = []
+    for k in REQ_COLS_CANON:
+        src = _pick(k, cols_lower)
+        if src is None:
+            # allow QC_TA optional (older sheets)
+            if k == "Explanation (Tamil)": 
+                out_cols[k] = ""
+                continue
+            missing.append(k)
         else:
-            m = re.search(r"[?&]id=([^&]+)", u)
-            if m:
-                u = f"https://drive.google.com/uc?export=download&id={m.group(1)}"
-    # Try CSV then Excel by URL
-    try:
-        return pd.read_csv(u)
-    except Exception:
-        pass
-    try:
-        return pd.read_excel(u)
-    except Exception as e:
-        raise RuntimeError(f"Could not open link. Expecting CSV/XLSX. Details: {e}")
+            out_cols[k] = src
+    if missing:
+        raise RuntimeError(f"Missing required columns: {', '.join(missing)}")
+    out = pd.DataFrame({k: df[v] if v != "" else "" for k,v in out_cols.items()})
+    return out.reset_index(drop=True)
 
+def _clean_drive(url:str)->str:
+    url=url.strip()
+    if "drive.google.com" not in url: return url
+    m=re.search(r"/file/d/([^/]+)/", url)
+    if m: return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    m=re.search(r"[?&]id=([^&]+)", url)
+    if m: return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    return url
 
-def _to_excel_bytes(df: pd.DataFrame) -> bytes:
-    buf = io.BytesIO()
-    df.to_excel(buf, index=False)
-    buf.seek(0)
-    return buf.getvalue()
-
-
-# ---------- UI ----------
-def render_top_strip(
-    title_ta: str = "பாட பொருள் நிபுணர் பலகை / SME Panel",
-    on_save: Optional[Callable[[], None]] = None,
-    on_mark_complete: Optional[Callable[[], None]] = None,
-    on_next: Optional[Callable[[], None]] = None,
-):
-    ss = st.session_state
-
-    # Tiny CSS for tight layout + iPad look
-    st.markdown(
-        """
-<style>
-/* palm-leaf background tone comes from page theme; keep strip compact */
-.strip-wrap {margin: 0 0 6px 0;}
-.strip-hr    {height:8px;background:#1c1f24;border-radius:6px;margin:6px 0 8px 0;}
-/* row gaps & button sizing */
-.strip-row .stButton>button{padding:8px 12px; border-radius:8px;}
-.strip-row {margin-bottom:6px;}
-/* compact inputs */
-.strip-input .stTextInput>div>div {padding:6px 10px;}
-/* uploader compact */
-.strip-upload [data-testid="stFileUploaderDropzone"]{padding:10px;}
-/* small captions */
-.strip-cap{font-size:12px;color:#666;margin-top:2px;}
-/* date/time cells */
-.datebox, .timebox{background:#262a30;color:#fff;border-radius:8px;padding:6px 10px;}
-.datebox small, .timebox small{opacity:.9;}
-.titlebox{font-weight:700;text-align:center;}
-</style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # ---------- Row 0: dark rule ----------
-    st.markdown('<div class="strip-wrap"><div class="strip-hr"></div>', unsafe_allow_html=True)
-
-    # ---------- Row 1: Date | Title | Time ----------
-    cL, cM, cR = st.columns([1.1, 2.2, 1.0])
-    with cL:
-        st.markdown(
-            f'<div class="datebox"><div>{pd.Timestamp.now().strftime("%d %b %Y")}'
-            f'</div><small>Oct {pd.Timestamp.now().day}</small></div>',
-            unsafe_allow_html=True,
-        )
-    with cM:
-        st.markdown(f'<div class="titlebox">{title_ta}</div>', unsafe_allow_html=True)
-        rid = ss.get("qc_work", pd.DataFrame()).iloc[ss.get("qc_idx", 0):ss.get("qc_idx", 1)]
+def _read_any(src):
+    # src can be URL string or a file-like
+    if isinstance(src, str):
+        url = _clean_drive(src)
         try:
-            rid_val = str(rid["ID"].values[0])
+            return pd.read_csv(url)
         except Exception:
-            rid_val = "—"
-        st.caption(f"ID: {rid_val}")
-    with cR:
-        st.markdown(
-            f'<div class="timebox"><div>{pd.Timestamp.now().strftime("%H:%M")}</div>'
-            f'<small>24-hr</small></div>',
-            unsafe_allow_html=True,
-        )
+            return pd.read_excel(url)
+    # uploaded file
+    try:
+        return pd.read_csv(src)
+    except Exception:
+        src.seek(0)
+        return pd.read_excel(src)
 
-    # ---------- Row 2: Actions (Save | Mark Complete | Save & Next | Download QC) ----------
-    a1, a2, a3, a4 = st.columns([1, 1, 1, 1])
-    with a1:
-        if st.button("💾 Save", use_container_width=True):
-            if on_save:
-                on_save()
-    with a2:
-        if st.button("✅ Mark Complete", use_container_width=True):
-            if on_mark_complete:
-                on_mark_complete()
-    with a3:
-        if st.button("📄 Save & Next", use_container_width=True):
-            if on_next:
-                on_next()
-    with a4:
-        qcw = ss.get("qc_work", pd.DataFrame())
-        disabled = qcw.empty
-        if not disabled:
-            excel_bytes = _to_excel_bytes(qcw)
-        else:
-            excel_bytes = b""
-        st.download_button(
-            "⬇️ Download QC",
-            data=excel_bytes,
-            file_name="qc_verified.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            disabled=disabled,
-            use_container_width=True,
-        )
+def _publish(df: pd.DataFrame):
+    ss = st.session_state
+    df = normalize_columns(df)
+    ss.qc_src  = df.copy()
+    ss.qc_work = df.copy()
+    ss.qc_idx  = 0
 
-    # ---------- Row 3: Link + Load (left)  |  Uploader (right) ----------
-    st.markdown('<div class="strip-row">', unsafe_allow_html=True)
-    lL, lR = st.columns([1.6, 1.0])
+def render_top_strip():
+    ss = st.session_state
+    with st.container():
+        c1,c2,c3,c4 = st.columns([1.2,1.2,1.2,1.2])
+        with c1:
+            st.button("💾 Save", key="btn_save_top")
+        with c2:
+            st.button("✅ Mark Complete", key="btn_done_top")
+        with c3:
+            st.button("📄 Save & Next", key="btn_next_top")
+        with c4:
+            st.download_button("📥 Download QC", data=b"", file_name="qc_verified.xlsx", key="btn_dl_top", disabled=True)
 
-    with lL:
         st.caption("Paste the CSV/XLSX link sent by admin (or upload). Quick & compact.")
-        col_link, col_load = st.columns([5, 1])
-        with col_link:
-            link_in = st.text_input("Paste link", key="qc_link_in", label_visibility="collapsed", placeholder="Paste the CSV/XLSX link", help=None)
-        with col_load:
-            if st.button("Load", use_container_width=True):
+
+        lcol, rcol = st.columns([1,1])
+        with lcol:
+            link = st.text_input(" ", key="qc_link_in", label_visibility="collapsed", placeholder="Paste the CSV/XLSX link")
+        with rcol:
+            up = st.file_uploader("Upload the file here (Limit 200 MB per file)", type=["csv","xlsx"])
+
+        l2, r2 = st.columns([0.2, 1.8])
+        with l2:
+            if st.button("Load", key="btn_load"):
                 try:
-                    df = _read_from_link(link_in)
-                    # standardize expected columns into qc_work; keep qc_src as original
-                    ss.qc_src = df.copy()
-                    ss.qc_work = df.copy()
-                    ss.qc_idx = 0
-                    st.toast("Loaded from link.", icon="✅")
+                    if link.strip():
+                        df = _read_any(link.strip())
+                    elif up is not None:
+                        # keep a copy in memory for excel reader
+                        buf = io.BytesIO(up.getbuffer())
+                        buf.seek(0)
+                        df = _read_any(buf)
+                        ss._last_upload_name = up.name
+                    else:
+                        st.warning("Empty link.", icon="⚠️")
+                        st.stop()
+                    _publish(df)
+                    st.success("Loaded from file.", icon="✅")
                     st.rerun()
                 except Exception as e:
-                    st.error(str(e))
-
-    with lR:
-        st.caption("Upload the file here (Limit 200 MB per file)")
-        up = st.file_uploader("Upload", type=["csv", "xlsx"], label_visibility="collapsed")
-        if up is not None:
-            try:
-                dfu = _read_any(up)
-                ss.qc_src = dfu.copy()
-                ss.qc_work = dfu.copy()
-                ss.qc_idx = 0
-                st.toast("Loaded from file.", icon="✅")
-                st.rerun()
-            except Exception as e:
-                st.error(str(e))
-
-    st.markdown("</div></div>", unsafe_allow_html=True)  # close strip-wrap
+                    st.error(f"Could not load: {e}", icon="🛑")
+        with r2:
+            if up is not None:
+                st.write(f"📄 {up.name}")
