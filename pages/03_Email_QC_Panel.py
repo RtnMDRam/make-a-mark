@@ -1,100 +1,82 @@
-# pages/03_Email_QC_Panel.py
-from __future__ import annotations
 import streamlit as st
 import pandas as pd
-
-# Local imports
 from lib.top_strip import render_top_strip
 
-st.set_page_config(page_title="SME QC Panel", page_icon="📝", layout="wide")
+st.set_page_config(page_title="SME QC Panel", layout="wide")
 
-# ---------- TOP STRIP (header + loader)
 ready = render_top_strip()
 
-# ---------- Helpers to read one row safely (column names may vary)
-def _first_col(df: pd.DataFrame, names: list[str]) -> str:
-    for n in names:
-        if n in df.columns:
-            val = df.at[idx, n]
-            return "" if pd.isna(val) else str(val)
-    return ""
+# If dataset is ready, show Editor (top), then Tamil, then English
+if ready:
+    df: pd.DataFrame = st.session_state.qc_df
+    idx = st.session_state.get("qc_idx", 0)
+    row = df.iloc[idx] if len(df) > 0 else {}
 
-def _options_line(df: pd.DataFrame, A, B, C, D) -> str:
-    a = _first_col(df, A); b = _first_col(df, B); c = _first_col(df, C); d = _first_col(df, D)
-    parts = [p for p in [a,b,c,d] if p]
-    return " | ".join([f"{x}" for x in parts]) if parts else ""
+    # Pull safe values (handle missing columns gracefully)
+    q_ta = str(row.get("q_ta", "") or "")
+    a_ta = str(row.get("a_ta", "") or "")
+    b_ta = str(row.get("b_ta", "") or "")
+    c_ta = str(row.get("c_ta", "") or "")
+    d_ta = str(row.get("d_ta", "") or "")
+    ans_ta = str(row.get("ans_ta", "") or "")
+    expl_ta = str(row.get("expl_ta", "") or "")
 
-# ---------- Render when dataset is ready
-if not ready:
-    st.info("Paste a link or upload a file at the top strip to begin.")
-    st.stop()
+    q_en = str(row.get("q_en", "") or "")
+    a_en = str(row.get("a_en", "") or "")
+    b_en = str(row.get("b_en", "") or "")
+    c_en = str(row.get("c_en", "") or "")
+    d_en = str(row.get("d_en", "") or "")
+    ans_en = str(row.get("ans_en", "") or "")
+    expl_en = str(row.get("expl_en", "") or "")
 
-ss = st.session_state
-df: pd.DataFrame = ss.qc_df
-idx: int = ss.qc_idx if "qc_idx" in ss else 0
-idx = max(0, min(idx, len(df)-1))
+    st.markdown("### SME Edit Console / ஆசிரியர் திருத்தம்")
 
-# Guess common columns (adjust here to your sheet headers)
-Q_ta  = _first_col(df, ["Q_ta","ta_Q","Q Tamil","Q (ta)","Q-TA"])
-Q_en  = _first_col(df, ["Q_en","en_Q","Q English","Q (en)","Q-EN"])
+    # Question + Answer row
+    colQ, colAns = st.columns([2,1])
+    with colQ:
+        q_ta = st.text_area("", value=q_ta, key=f"q_ta_{idx}", height=90, label_visibility="collapsed")
+    with colAns:
+        ans_ta = st.text_input("பதில் / Answer", value=ans_ta, key=f"ans_ta_{idx}")
 
-A_ta  = _first_col(df, ["A_ta","ta_A","OptA_ta","OptionA_ta"])
-B_ta  = _first_col(df, ["B_ta","ta_B","OptB_ta","OptionB_ta"])
-C_ta  = _first_col(df, ["C_ta","ta_C","OptC_ta","OptionC_ta"])
-D_ta  = _first_col(df, ["D_ta","ta_D","OptD_ta","OptionD_ta"])
-A_en  = _first_col(df, ["A_en","en_A","OptA_en","OptionA_en"])
-B_en  = _first_col(df, ["B_en","en_B","OptB_en","OptionB_en"])
-C_en  = _first_col(df, ["C_en","en_C","OptC_en","OptionC_en"])
-D_en  = _first_col(df, ["D_en","en_D","OptD_en","OptionD_en"])
+    # A-B-C-D in one row
+    A, B = st.columns(2)
+    with A:
+        a_ta = st.text_input("A", value=a_ta, key=f"a_ta_{idx}")
+    with B:
+        b_ta = st.text_input("B", value=b_ta, key=f"b_ta_{idx}")
+    C, D = st.columns(2)
+    with C:
+        c_ta = st.text_input("C", value=c_ta, key=f"c_ta_{idx}")
+    with D:
+        d_ta = st.text_input("D", value=d_ta, key=f"d_ta_{idx}")
 
-Ans_ta = _first_col(df, ["Answer_ta","ta_Answer","Ans_ta","Answer TA"])
-Ans_en = _first_col(df, ["Answer_en","en_Answer","Ans_en","Answer EN"])
+    # Explanation
+    expl_ta = st.text_area("விளக்கங்கள் :", value=expl_ta, key=f"expl_ta_{idx}", height=120)
 
-Exp_ta = _first_col(df, ["Explanation_ta","ta_Explanation","Exp_ta","Explanation TA"])
-Exp_en = _first_col(df, ["Explanation_en","en_Explanation","Exp_en","Explanation EN"])
+    st.markdown("---")
 
-# ---------- SME EDIT CONSOLE (FIRST)
-st.markdown("### SME Edit Console / ஆசிரியர் திருத்தம்")
+    # Tamil Original
+    with st.container():
+        st.markdown("### Tamil Original / தமிழ் மூலப் பதிப்பு")
+        st.markdown(
+            f"""<div style="background:#eef9ee;border:1px solid #cfe8cf;border-radius:10px;padding:14px">
+            <b>Q:</b> {q_ta or "—"}<br/>
+            <b>Options (A–D):</b> {a_ta or "—"} | {b_ta or "—"} | {c_ta or "—"} | {d_ta or "—"}<br/>
+            <b>Answer:</b> {ans_ta or "—"}<br/>
+            <b>Explanation:</b> {expl_ta or "—"}
+            </div>""",
+            unsafe_allow_html=True
+        )
 
-ecol1, ecol2 = st.columns([2,1])
-with ecol1:
-    q_val = st.text_area("", Q_ta, height=90, key=f"q_ta_{idx}", label_visibility="collapsed")
-with ecol2:
-    ans_val = st.text_input("பதில் / Answer", Ans_ta, key=f"ans_ta_{idx}")
-
-ocol1, ocol2 = st.columns(2)
-with ocol1:
-    a_val = st.text_input("A", A_ta, key=f"A_ta_{idx}")
-with ocol2:
-    b_val = st.text_input("B", B_ta, key=f"B_ta_{idx}")
-ocol3, ocol4 = st.columns(2)
-with ocol3:
-    c_val = st.text_input("C", C_ta, key=f"C_ta_{idx}")
-with ocol4:
-    d_val = st.text_input("D", D_ta, key=f"D_ta_{idx}")
-
-st.text_area("விளக்கங்கள் :", Exp_ta, height=120, key=f"exp_ta_{idx}")
-
-# Save buttons (top strip buttons are already present; these are optional duplicates)
-# If you want these to mutate df, wire as needed:
-# if st.button("Save changes"): ...
-
-st.markdown("---")
-
-# ---------- TAMIL ORIGINAL (REFERENCE)
-st.markdown("#### Tamil Original / தமிழ் மூலப் பதிப்பு")
-ta_box = st.container(border=True)
-with ta_box:
-    st.markdown(f"**Q:** {Q_ta or '—'}")
-    st.markdown(f"**Options (A–D):** {_options_line(df, ['A_ta'], ['B_ta'], ['C_ta'], ['D_ta']) or '—'}")
-    st.markdown(f"**Answer:** {Ans_ta or '—'}")
-    st.markdown(f"**Explanation:** {Exp_ta or '—'}")
-
-# ---------- ENGLISH ORIGINAL (REFERENCE)
-st.markdown("#### English Version / ஆங்கிலம்")
-en_box = st.container(border=True)
-with en_box:
-    st.markdown(f"**Q:** {Q_en or '—'}")
-    st.markdown(f"**Options (A–D):** {_options_line(df, ['A_en'], ['B_en'], ['C_en'], ['D_en']) or '—'}")
-    st.markdown(f"**Answer:** {Ans_en or '—'}")
-    st.markdown(f"**Explanation:** {Exp_en or '—'}")
+    # English Version
+    with st.container():
+        st.markdown("### English Version / ஆங்கிலம்")
+        st.markdown(
+            f"""<div style="background:#eaf2ff;border:1px solid #cfe0ff;border-radius:10px;padding:14px">
+            <b>Q:</b> {q_en or "—"}<br/>
+            <b>Options (A–D):</b> {a_en or "—"} | {b_en or "—"} | {c_en or "—"} | {d_en or "—"}<br/>
+            <b>Answer:</b> {ans_en or "—"}<br/>
+            <b>Explanation:</b> {expl_en or "—"}
+            </div>""",
+            unsafe_allow_html=True
+        )
