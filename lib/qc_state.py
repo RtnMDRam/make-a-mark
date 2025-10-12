@@ -1,130 +1,130 @@
-import unicodedata
-import re
+# --- helpers ---------------------------------------------------------------
 
-# --- replace the old helpers: _clean, _opts_as_line stay the same ---
+import re
+import pandas as pd
+import streamlit as st
 
 def _norm(s: str) -> str:
-    """Normalize a column name: strip, lowercase, collapse spaces & nbsp, drop punctuation."""
+    """normalize a header/value for robust matching"""
     if s is None:
         return ""
-    s = unicodedata.normalize("NFKC", str(s))
-    s = s.replace("\u00A0", " ").replace("&nbsp;", " ")
-    s = re.sub(r"\s+", " ", s).strip().lower()
-    # remove punctuation & separators so 'question_options' → 'questionoptions'
-    s = re.sub(r"[^0-9a-zA-Z\u0B80-\u0BFF]", "", s)  # keep Tamil block too
+    s = str(s)
+    s = re.sub(r"<[^>]+>", " ", s)          # drop simple html tags
+    s = s.replace("\xa0", " ")              # nbsp
+    s = s.strip()
     return s
 
-def _cols_detect(df):
+def _norm_hdr(s: str) -> str:
+    """normalize header names for matching"""
+    s = _norm(s).lower()
+    # collapse spaces and punctuation
+    s = re.sub(r"[\s\-\_\/\:\(\)]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def _cols_detect(df: pd.DataFrame) -> dict:
     """
-    Robust auto-detect.
-    English accepts: question, q
-                     questionoptions / options / option
-                     answers / answer / ans
-                     explanation / explain / exp
-    Tamil accepts startswith of: கேள்வி, விருப்பங்கள், பதில், விளக்கம்
-    Works even with spaces, nbsp, punctuation, case differences.
+    Detect English (en.*) and Tamil (ta.*) columns from many possible header names.
+    Returns a dict with keys: en.q, en.o, en.a, en.e, ta.q, ta.o, ta.a, ta.e (missing keys omitted).
     """
-    # Build normalized lookup
-    norm_to_actual = {}
-    for c in df.columns:
-        norm_to_actual[_norm(c)] = c
+    # Build normalized header map: norm_name -> real_name
+    hdr_map = { _norm_hdr(c): c for c in df.columns }
 
-    # helpers
-    def pick(norm_candidates):
-        for cand in norm_candidates:
-            if cand in norm_to_actual:
-                return norm_to_actual[cand]
-        return None
+    # Known variants for each target key
+    VARS = {
+        # English
+        "en.q": ["en q", "q", "question", "eng question", "english question"],
+        "en.o": ["en o", "o", "options", "opts", "choices", "questionoptions", "options a d", "english options"],
+        "en.a": ["en a", "a", "answer", "answers", "correct answer", "english answer"],
+        "en.e": ["en e", "e", "explanation", "exp", "english explanation"],
 
-    # English
-    en_q = pick(["question","q","enquestion","enq"])
-    en_o = pick(["questionoptions","options","option","enoptions","enoption"])
-    en_a = pick(["answers","answer","ans","enanswers","enanswer","enans"])
-    en_e = pick(["explanation","explain","exp","enexplanation","enexplain","enexp"])
+        # Tamil (we'll keep them optional for now)
+        "ta.q": ["ta q", "கேள்வி", "tamil question"],
+        "ta.o": ["ta o", "விருப்பங்கள்", "விருப்பங்கள் a d", "tamil options"],
+        "ta.a": ["ta a", "பதில்", "tamil answer"],
+        "ta.e": ["ta e", "விளக்கம்", "tamil explanation"],
+    }
 
-    # Tamil – allow fuzzy “starts with” on real column names (not normalized),
-    # but try normalized too in case punctuation/nbsp exist.
-    def pick_ta(prefix_tamil):
-        # try exact/startswith on actual columns
-        for c in df.columns:
-            s = str(c).strip()
-            if s.startswith(prefix_tamil):
-                return c
-        # fallback normalized
-        pref_n = _norm(prefix_tamil)
-        for c in df.columns:
-            if _norm(c).startswith(pref_n):
-                return c
-        return None
+    found = {}
+    for key, candidates in VARS.items():
+        for cand in candidates:
+            norm = _norm_hdr(cand)
+            if norm in hdr_map:
+                found[key] = hdr_map[norm]
+                break
 
-    ta_q = pick_ta("கேள்வி")
-    ta_o = pick_ta("விருப்பங்கள்")
-    ta_a = pick_ta("பதில்")
-    ta_e = pick_ta("விளக்கம்")
+    return found
 
-    return dict(en=dict(q=en_q, o=en_o, a=en_a, e=en_e),
-                ta=dict(q=ta_q, o=ta_o, a=ta_a, e=ta_e))
+def _get_cell(df: pd.DataFrame, row_idx: int, col_name: str) -> str:
+    """Safe cell fetch as text, cleaning simple html / whitespace."""
+    try:
+        val = df.at[row_idx, col_name]
+    except Exception:
+        return ""
+    return _norm(val)
 
 def render_boxes_with_content():
-    st.markdown(_LAYOUT_CSS, unsafe_allow_html=True)
-
-    df = st.session_state.get("qc_df")
-    idx = int(st.session_state.get("qc_idx", 0))
-
-    st.markdown(
-        """
-        <div class="stack">
-          <div class="card ed-card"><h4>SME Panel / ஆசிரியர் அங்கீகாரம் வழங்கும் பகுதி</h4></div>
-          <div class="card ta-card"><h4>தமிழ் மூலப் பதிப்பு</h4><div id="ta-body"></div></div>
-          <div class="card en-card"><h4>English Version</h4><div id="en-body"></div></div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """
+    - Expects st.session_state.qc_df (DataFrame) and st.session_state.qc_idx (int)
+    - Fills English box now (Tamil later). Shows a gentle note only if English columns missing.
+    """
+    df: pd.DataFrame = st.session_state.get("qc_df")
+    idx: int = int(st.session_state.get("qc_idx", 0))
 
     if df is None or df.empty:
-        st.warning("No data loaded yet. Upload a CSV/XLSX and press **Load**.")
-        return
-    if not (0 <= idx < len(df)):
-        st.error(f"Row index {idx} is out of range (0–{len(df)-1}).")
         return
 
+    # Detect columns
     cols = _cols_detect(df)
-    row = df.iloc[idx]
 
-    # ----- English first (render even if Tamil missing) -----
-    en = cols["en"]
-    en_html = ""
-    if any(en.values()):
-        en_q = _clean(row.get(en["q"])) if en["q"] else "—"
-        en_o = _opts_as_line(row.get(en["o"])) if en["o"] else "—"
-        en_a = _clean(row.get(en["a"])) if en["a"] else "—"
-        en_e = _clean(row.get(en["e"])) if en["e"] else "—"
-        en_html = (
-            _line("Q :", en_q) +
-            _line("Options (A–D) :", en_o) +
-            _line("Answer :", en_a) +
-            _line("Explanation :", en_e)
+    # Build English block (use empty strings if not present)
+    en_q = _get_cell(df, idx, cols["en.q"]) if "en.q" in cols else ""
+    en_o = _get_cell(df, idx, cols["en.o"]) if "en.o" in cols else ""
+    en_a = _get_cell(df, idx, cols["en.a"]) if "en.a" in cols else ""
+    en_e = _get_cell(df, idx, cols["en.e"]) if "en.e" in cols else ""
+
+    # Tamil (optional for this step)
+    ta_q = _get_cell(df, idx, cols["ta.q"]) if "ta.q" in cols else ""
+    ta_o = _get_cell(df, idx, cols["ta.o"]) if "ta.o" in cols else ""
+    ta_a = _get_cell(df, idx, cols["ta.a"]) if "ta.a" in cols else ""
+    ta_e = _get_cell(df, idx, cols["ta.e"]) if "ta.e" in cols else ""
+
+    # If English is missing entirely, show a small note (bottom of page)
+    missing_en = [k for k in ["en.q","en.o","en.a","en.e"] if k not in cols]
+    if len(missing_en) == 4:
+        st.info("Could not find English columns. Expected something like: "
+                "`question`, `questionOptions`, `answers`, `explanation` "
+                "(or en.q / en.o / en.a / en.e). Please check the header row.")
+        return
+
+    # ---- Render the three boxes (we already have the containers created above) ----
+    # They’re just markdown right now—fill content with bold labels, respecting your compact style
+    # Tamil (middle)
+    with st.container():
+        st.markdown(
+            f"""
+<div class="card ta-card">
+  <div class="row"><div class="label">தமிழ் மூலப் பதிப்பு</div></div>
+  <div class="row"><div>கேள்வி : {ta_q or "—"}</div></div>
+  <div class="row"><div>விருப்பங்கள் (A–D) : {ta_o or "—"}</div></div>
+  <div class="row"><div>பதில் : {ta_a or "—"}</div></div>
+  <div class="row"><div>விளக்கம் : {ta_e or "—"}</div></div>
+</div>
+""",
+            unsafe_allow_html=True,
         )
 
-    if en_html:
-        st.markdown(f"""<script>
-            const e=document.getElementById('en-body'); if(e) e.innerHTML = `{en_html}`;
-        </script>""", unsafe_allow_html=True)
-
-    # ----- Tamil (only if we find the columns; otherwise silently skip) -----
-    ta = cols["ta"]
-    if any(ta.values()):
-        ta_q = _clean(row.get(ta["q"])) if ta["q"] else "—"
-        ta_o = _opts_as_line(row.get(ta["o"])) if ta["o"] else "—"
-        ta_a = _clean(row.get(ta["a"])) if ta["a"] else "—"
-        ta_e = _clean(row.get(ta["e"])) if ta["e"] else "—"
-        ta_html = (
-            _line("கேள்வி :", ta_q) +
-            _line("விருப்பங்கள் (A–D) :", ta_o) +
-            _line("பதில் :", ta_a) +
-            _line("விளக்கம் :", ta_e)
+    # English (bottom)
+    with st.container():
+        st.markdown(
+            f"""
+<div class="card en-card">
+  <div class="row"><div class="label">English Version</div></div>
+  <div class="row"><div>Q : {en_q or "—"}</div></div>
+  <div class="row"><div>Options (A–D) : {en_o or "—"}</div></div>
+  <div class="row"><div>Answer : {en_a or "—"}</div></div>
+  <div class="row"><div>Explanation : {en_e or "—"}</div></div>
+</div>
+""",
+            unsafe_allow_html=True,
         )
-        st.markdown(f"""<script>
-            const t=document.getElementById('ta-body'); if(t) t.innerHTML = `{ta_html}`;
-        </script>""", unsafe_allow_html=True)
