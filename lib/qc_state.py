@@ -1,40 +1,36 @@
-# lib/qc_state.py  — compact references (<50% height) + thin divider line
+# lib/qc_state.py — dividers above/between refs + 40% total height
 import ast, math, re
 import streamlit as st
 
-# ===== Compact layout & typography =====
 _LAYOUT_CSS = """
 <style>
 :root{
-  --ref-pane-vh: 23;        /* each ref pane height in viewport %; tweak 22–24 */
-  --divider-color: #5aa3ff; /* thin line between TA & EN — change color here */
+  --ref-pane-vh: 20;          /* each ref pane ≈20% vh → TA+EN ≈40% total */
+  --divider-color: #5aa3ff;   /* line between TA & EN */
+  --divider-top-color: #6bd36b;/* line between SME editor & TA */
 }
 
-/* page padding small */
 .block-container{padding-top:10px;padding-bottom:10px;}
 
-/* generic section wrapper with NO border */
 .section{border:0!important;box-shadow:none!important;background:transparent!important;
          margin:0 0 6px 0;padding:0;}
 
-/* titles tiny & tight */
 .section .title{font-size:12px;font-weight:700;line-height:1;margin:0 0 4px 0;color:#cfcfcf;}
 
 .content{
-  font-size:12px; line-height:1.15;          /* tighter lines */
+  font-size:12px; line-height:1.15;
   padding:0; margin:0;
   max-height: calc(var(--ref-pane-vh) * 1vh);
-  overflow:auto;                              /* scroll if content is long */
+  overflow:auto;
 }
-
-/* kill extra white-space between paragraphs & lists */
 .content p, .content ul, .content ol{margin:2px 0 !important;}
 .content p + p{margin-top:2px !important;}
 .content ul, .content ol{padding-left:16px;margin:2px 0 2px 16px !important;}
 .content strong{font-weight:600;}
 
-/* a SINGLE thin divider between TA and EN */
+/* thin dividers */
 hr.ref-divider{border:0;height:1px;background:var(--divider-color);margin:6px 0;}
+hr.sme-divider{border:0;height:1px;background:var(--divider-top-color);margin:6px 0;}
 </style>
 """
 
@@ -75,12 +71,10 @@ def _fmt_options(opts):
 # ---------- column mapping ----------
 SHORT_EN = ["en.q","en.o","en.a","en.e"]
 LONG_EN_MAP = {"en.q":"question","en.o":"questionOptions","en.a":"answers","en.e":"explanation"}
-TA_FALLBACKS = {
-    "ta.q":["கேள்வி","வினா","தமிழ் கேள்வி"],
-    "ta.o":["விருப்பங்கள்","விருப்பங்கள் (A–D)","விருப்பங்கள் (A-D)"],
-    "ta.a":["பதில்"],
-    "ta.e":["விளக்கம்"],
-}
+TA_FALLBACKS = {"ta.q":["கேள்வி","வினா","தமிழ் கேள்வி"],
+                "ta.o":["விருப்பங்கள்","விருப்பங்கள் (A–D)","விருப்பங்கள் (A-D)"],
+                "ta.a":["பதில்"],
+                "ta.e":["விளக்கம்"]}
 
 def _resolve_column_maps(df):
     cols = list(df.columns); lower = [c.strip().lower() for c in cols]
@@ -90,7 +84,7 @@ def _resolve_column_maps(df):
         en_map = {c:c for c in SHORT_EN}
     elif all(LONG_EN_MAP[k] in df.columns for k in SHORT_EN):
         en_map = {k:LONG_EN_MAP[k] for k in SHORT_EN}
-    # Tamil via fuzzy names
+    # Tamil fuzzy map
     for key, keys in TA_FALLBACKS.items():
         for k in keys:
             k_low = k.strip().lower()
@@ -110,7 +104,6 @@ def _get_row():
 
 # ---------- sections ----------
 def _editor_tamil():
-    # keep editor large; layout request only targets reference panes
     st.text_area("", "", height=340, label_visibility="collapsed")
 
 def _render_ta_box():
@@ -149,21 +142,24 @@ def _render_en_box():
         f'<p><strong>Explanation :</strong> {e}</p>'
         f'</div>', unsafe_allow_html=True)
 
-# ---------- final renderer (order fixed) ----------
+# ---------- final renderer ----------
 def render_reference_and_editor():
     st.markdown(_LAYOUT_CSS, unsafe_allow_html=True)
 
-    # TOP: SME editor (Tamil)
+    # TOP: SME editor
     _section_open("SME Panel / ஆசிரியர் அங்கீகாரம் வழங்கும் பகுதி")
     _editor_tamil()
     _section_close()
+
+    # NEW: thin divider between SME editor and Tamil reference
+    st.markdown('<hr class="sme-divider">', unsafe_allow_html=True)
 
     # MIDDLE: Tamil reference (compact)
     _section_open("தமிழ் மூலப் பதிவு")
     _render_ta_box()
     _section_close()
 
-    # THIN DIVIDER between Tamil & English
+    # Divider between Tamil & English
     st.markdown('<hr class="ref-divider">', unsafe_allow_html=True)
 
     # BOTTOM: English reference (compact)
