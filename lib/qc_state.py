@@ -1,33 +1,56 @@
 # lib/qc_state.py
 import streamlit as st
 
-# --- compact CSS: remove gaps, keep cards touching ---
+# --- layout css: add borders + remove big gaps + hide any old separators ----
 _LAYOUT_CSS = """
 <style>
-[data-testid="stSidebar"]{display:none !important;}
-.block-container{padding-top:12px;padding-bottom:12px;}
-.card{border-radius:12px; padding:16px 18px; margin:0;}               /* no vertical gaps */
-.card + .card{margin-top:6px;}                                        /* hairline only */
-.ta-card{background:#eaf7e7;}     /* light green */
-.en-card{background:#eaf1ff;}     /* light blue */
-.ed-card{background:#fff6d6;}     /* light yellow */
-.card h4{margin:0 0 10px 0; font-size:16px;}
-.row{display:grid; grid-template-columns:1fr; gap:8px;}
-.label{font-weight:600;}
-.sep{opacity:.65;}
-/* tighten reference lines */
-.pair{display:grid; grid-template-columns:auto 1fr; gap:8px; align-items:start;}
+/* hide Streamlit left sidebar */
+[data-testid="stSidebar"]{display:none!important;}
+
+/* tighten page paddings a bit */
+.block-container{padding-top:10px; padding-bottom:12px;}
+
+/* CARD look: border + compact padding, tiny vertical gap only */
+.card{
+  background:#ffffff;
+  border:1px solid #d0d7de;          /* <— outer line */
+  border-radius:10px;
+  padding:14px 16px;
+  margin:0;
+}
+/* Only a hairline gap between stacked cards */
+.card + .card{ margin-top:6px; }
+
+/* light tints (optional, very subtle) */
+.ta-card{ background:#f5fbf5; }       /* Tamil reference (green tint) */
+.en-card{ background:#f6f8ff; }       /* English reference (blue tint) */
+.ed-card{ background:#fffaf0; }       /* Editable Tamil (warm tint) */
+
+/* compact headings & labels */
+.card h4{ margin:0 0 8px 0; font-size:18px; font-weight:700; }
+.label{ font-weight:600; }
+
+/* if a previous build injected a colored separator bar, hide it */
+.sep{ display:none !important; }
+
+/* Two-column helper (not used yet, but kept) */
+.row{ display:grid; grid-template-columns:1fr; gap:8px; }
+.pair{ display:grid; grid-template-columns:auto 1fr; gap:8px; align-items:start; }
 </style>
 """
 
 def _line(label, value="—"):
     st.markdown(
-        f"""<div class="pair">
-              <div class="label">{label}</div>
-              <div class="sep">: {value}</div>
-            </div>""",
+        f"""
+        <div class="pair">
+          <div class="label">{label}</div>
+          <div>{value}</div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
+
+# ------------------ PANELS (layout only; no data wiring yet) -----------------
 
 def _editor_tamil():
     st.markdown('<div class="card ed-card">', unsafe_allow_html=True)
@@ -36,7 +59,7 @@ def _editor_tamil():
     st.text_input("விருப்பங்கள் (A–D)", value="", label_visibility="visible", key="ed_opts_ta")
     st.text_input("பதில்", value="", label_visibility="visible", key="ed_ans_ta")
     st.text_area("விளக்கம்", value="", height=120, label_visibility="visible", key="ed_ex_ta")
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def _reference_tamil():
     st.markdown('<div class="card ta-card">', unsafe_allow_html=True)
@@ -45,7 +68,7 @@ def _reference_tamil():
     _line("விருப்பங்கள் (A–D)")
     _line("பதில்")
     _line("விளக்கம்")
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def _reference_english():
     st.markdown('<div class="card en-card">', unsafe_allow_html=True)
@@ -54,13 +77,14 @@ def _reference_english():
     _line("Options (A–D)")
     _line("Answer")
     _line("Explanation")
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def render_layout_only():
-    """Freeze the order: Editor (top) -> Tamil reference (middle) -> English reference (bottom)."""
+    """
+    Freeze the order: EDITOR (top) → Tamil reference (middle) → English reference (bottom)
+    Cards are bordered and almost touching (6px gap). No extra separators.
+    """
     st.markdown(_LAYOUT_CSS, unsafe_allow_html=True)
-
-    # Cards TOUCH each other (no space). Order is locked:
-    _editor_tamil()       # TOP (editable Tamil)
+    _editor_tamil()       # TOP   (editable Tamil)
     _reference_tamil()    # MIDDLE (non-editable Tamil)
     _reference_english()  # BOTTOM (non-editable English)
