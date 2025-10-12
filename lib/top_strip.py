@@ -1,142 +1,116 @@
-# lib/top_strip.py
-from __future__ import annotations
 import datetime as dt
-import io
 import pandas as pd
 import streamlit as st
+from io import BytesIO
 
-# ---------------- CSS (Palm-leaf look, compact spacing, hide sidebar & floater)
-_PALM_CSS = """
-<style>
-/* Hide Streamlit left sidebar and the floating Manage button */
-section[data-testid="stSidebar"] { display:none !important; }
-button[kind="header"] + div { display:none !important; }  /* “Manage app” floater */
+# --- helpers -------------------------------------------------
 
-/* Gentle palm-leaf background */
-main blockquote, .stApp { background: #F7F1E1; }
-.stMarkdown, .stButton>button, .stTextInput>div>div>input,
-.stFileUploader, .stTextArea textarea { font-size: 16px; }
+def _css_once():
+    st.markdown(
+        """
+        <style>
+        /* hide Streamlit left sidebar */
+        [data-testid="stSidebar"] { display: none !important; }
+        /* tighten layout & shrink big headings */
+        .block-container { padding-top: 12px; padding-bottom: 12px; }
+        h1, h2, h3 { margin: 0.2rem 0 0.6rem 0; }
+        .sme-title { font-size: 22px; font-weight: 700; }
+        /* compact controls */
+        .stButton>button { height: 40px; padding: 0 14px; }
+        .pill { background:#1f2937; color:#fff; padding:8px 14px; border-radius:10px;
+                font-variant-numeric: tabular-nums; line-height:1.1; display:inline-block; }
+        .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:end;}
+        .two-col .label{font-size:13px;color:#666;margin:0 0 4px 2px;}
+        .load-btn .stButton>button{min-width:72px;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-/* Pills (date/time) */
-.pill{
-  display:inline-block; padding:10px 14px; border-radius:12px;
-  background:#23262d; color:#fff; font-weight:600; line-height:1.15;
-  box-shadow: 0 1px 0 rgba(0,0,0,.15);
-}
-.pill small{ display:block; opacity:.7; font-weight:500; }
+def _pill(text, right=False):
+    align = "right" if right else "left"
+    st.markdown(f"<div style='text-align:{align}'><span class='pill'>{text}</span></div>", unsafe_allow_html=True)
 
-/* Top buttons row */
-.toprow .stButton>button{
-  height:40px; padding:0 16px; border-radius:10px; font-weight:600;
-}
+# Expose a simple key to override Tamil month-day text if you ever need:
+def _tamil_md_text():
+    # Default shown text; you can set st.session_state.t_month_day = "புரட்டாசி 26"
+    return st.session_state.get("t_month_day", "புரட்டாசி 26")
 
-/* Two column loader */
-.two-col > div:nth-child(1){ padding-right:10px; }
-.load-btn .stButton>button{ height:40px; min-width:68px; }
+# --- main renderer -------------------------------------------
 
-/* Section titles small, traditional */
-h3.sme-title{ margin:0 0 2px 0; font-size:20px; letter-spacing:.2px; }
-</style>
-"""
-
-# ---------------- Tamil month helper (approximate, for UI)
-_TM_MONTHS = [
-    ("சித்திரை", (4,14)), ("வைகாசி", (5,15)), ("ஆனி", (6,15)), ("ஆடி", (7,16)),
-    ("ஆவணி", (8,16)), ("புரட்டாசி", (9,17)), ("ஐப்பசி", (10,17)), ("கார்த்திகை", (11,16)),
-    ("மார்கழி", (12,16)), ("தை", (1,14)), ("மாசி", (2,13)), ("பங்குனி", (3,14)),
-]
-def _tamil_month_day(g: dt.date) -> tuple[str,int]:
-    # rough UI mapping: choose latest month whose start <= date
-    candidates = []
-    for name,(m,d) in _TM_MONTHS:
-        start = dt.date(g.year if m>=4 else g.year+1 if g.month>=4 else g.year, m, d)
-        candidates.append((start, name))
-    # pick the month whose start is <= g and maximum
-    start = max([s for s,_ in candidates if s<=g], default=dt.date(g.year,9,17))
-    name = [n for s,n in candidates if s==start][0]
-    day = (g - start).days + 1
-    return name, day
-
-# ---------------- internal: read file or link
-def _read_any(file_bytes: bytes, filename: str) -> pd.DataFrame:
-    ext = (filename or "").lower()
-    if ext.endswith(".csv"):
-        return pd.read_csv(io.BytesIO(file_bytes))
-    # default to Excel
-    return pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
-
-# ---------------- public: render the strip. Publishes qc_df & qc_idx when loaded.
-def render_top_strip() -> bool:
+def render_top_strip():
     """
-    Returns True when a dataset is ready in session (qc_df & qc_idx).
-    Publishes:
-        st.session_state.qc_df  : pandas.DataFrame
-        st.session_state.qc_idx : int
+    Top strip with date/time pills + actions + link/uploader.
+    Publishes on successful load:
+        st.session_state.qc_df : pandas.DataFrame
+        st.session_state.qc_idx: int
+    Returns True if data is ready.
     """
-    st.markdown(_PALM_CSS, unsafe_allow_html=True)
-
+    _css_once()
     now = dt.datetime.now()
-    ta_month, ta_day = _tamil_month_day(now.date())
 
-    left, mid, right = st.columns([1, 2, 1], gap="small")
+    # Pills row
+    left, mid, right = st.columns([1, 2, 1])
     with left:
-        st.markdown(
-            f'<span class="pill">{ta_month} {ta_day} I {now:%Y %b %d}</span>',
-            unsafe_allow_html=True,
-        )
+        # e.g. "புரட்டாசி 26 | 2025 Oct 12"
+        left_txt = f"{_tamil_md_text()} | {now:%Y %b %d}"
+        _pill(left_txt)
     with right:
-        st.markdown(
-            f'<span class="pill">{now:%H:%M}<small>24-hr</small></span>',
-            unsafe_allow_html=True,
-        )
+        # 24-hour only
+        _pill(f"{now:%H:%M}", right=True)
 
-    st.markdown('<h3 class="sme-title">பாட பொருள் நிபுணர் பலகை / SME Panel</h3>', unsafe_allow_html=True)
+    # Title
+    st.markdown("<div class='sme-title'>பாட பொருள் நிபுணர் பலகை / SME Panel</div>", unsafe_allow_html=True)
 
-    subL, subM, subR, subD = st.columns([1.1,1.1,1.1,1.2], gap="small")
-    with subL: st.button("💾 Save", key="btn_save", use_container_width=True)
-    with subM: st.button("✅ Mark Complete", key="btn_complete", use_container_width=True)
-    with subR: st.button("📄 Save & Next", key="btn_next", use_container_width=True)
-    with subD: st.button("⬇️ Download QC", key="btn_dl", use_container_width=True)
+    # Actions row
+    subL, subM, subR, subD = st.columns([1.1,1.1,1.1,1.2])
+    with subL:
+        st.button("💾 Save", key="btn_save", use_container_width=True)
+    with subM:
+        st.button("✅ Mark Complete", key="btn_complete", use_container_width=True)
+    with subR:
+        st.button("🗂️ Save & Next", key="btn_next", use_container_width=True)
+    with subD:
+        st.button("⬇️ Download QC", key="btn_dl", use_container_width=True)
+
+    # Link + Uploader (compact)
+    st.write("")  # tiny spacer
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        st.markdown("<div class='label'>Paste the CSV/XLSX link sent by admin (or upload). Quick & compact.</div>", unsafe_allow_html=True)
+        link = st.text_input("Paste the CSV/XLSX link", key="qc_link", label_visibility="collapsed")
+        st.session_state.setdefault("qc_link", link)
+    with c2:
+        st.markdown("<div class='label'>Upload the file here (Limit 200 MB per file)</div>", unsafe_allow_html=True)
+        file = st.file_uploader("Drag and drop file here", type=["csv","xlsx","xls"], label_visibility="collapsed", key="qc_file")
 
     st.write("")  # tiny spacer
+    _, load_col, _ = st.columns([1.5, .25, 1.5])
+    with load_col:
+        pressed = st.button("Load", key="btn_load", use_container_width=True)
 
-    # --- Loader row (link + file + Load)
-    lcol, bcol, fcol = st.columns([1.1, .16, 1.1], gap="small")
-    with lcol:
-        st.caption("Paste the CSV/XLSX link sent by admin (or upload). Quick & compact.")
-        link = st.text_input("Paste the CSV/XLSX link", key="qc_link", label_visibility="collapsed")
-    with bcol:
-        st.caption(" ")  # align
-        do_load = st.button("Load", key="btn_load", use_container_width=True)
-    with fcol:
-        st.caption("Upload the file here (Limit 200 MB per file)")
-        upload = st.file_uploader("Drag and drop file here",
-                                  type=["csv","xlsx","xls"], label_visibility="collapsed")
-
-    # --- If Load pressed, resolve source & publish session state
-    loaded = False
-    if do_load:
+    if pressed:
         try:
-            if upload is not None:
-                data = upload.read()
-                df = _read_any(data, upload.name)
-                loaded = True
+            df = None
+            if file is not None:
+                # Parse upload
+                if file.name.lower().endswith(".csv"):
+                    df = pd.read_csv(file)
+                else:
+                    df = pd.read_excel(BytesIO(file.read()))
             elif link.strip():
-                # Streamlit Cloud doesn’t allow direct fetch without requests; SMEs will usually upload.
-                st.warning("Please use the Upload box for now (link fetch is disabled in this build).")
-                df = None
-            else:
-                st.error("Empty link. Paste a link or upload a file.")
-                df = None
-
-            if loaded and df is not None and not df.empty:
-                ss = st.session_state
-                ss.qc_df = df.copy()
-                ss.qc_idx = 0
+                # You can add your actual drive fetch here; for now show a gentle message
+                st.warning("Link loading not wired yet. Please upload the file for now.")
+            if df is not None:
+                st.session_state.qc_df = df
+                st.session_state.qc_idx = 0
                 st.success("Loaded from file.")
+                return True
+            else:
+                st.error("No data found. Please upload a CSV/XLSX.")
         except Exception as e:
-            st.error(f"Could not load the file: {e}")
+            st.error(f"Could not load file: {e}")
 
-    # Return readiness
-    ss = st.session_state
-    return bool(getattr(ss, "qc_df", None) is not None and len(getattr(ss, "qc_df", [])) > 0)
+    # No data yet
+    st.info("Paste a link or upload a file, then press **Load**.")
+    return "qc_df" in st.session_state and not st.session_state.qc_df.empty
