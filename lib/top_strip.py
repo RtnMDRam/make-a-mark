@@ -53,8 +53,8 @@ def render_top_strip():
     now = dt.datetime.now()
     left, mid, right = st.columns([1,2,1])
     with left:
-    _pill(f"**{now:%d %b %Y}**\nOct {now:%d}")
-    with right:
+    _pill(f"**{now:%d %b %Y}**\n{now:%a}")  # shows date + day (e.g., Sun)
+with right:
     _pill(f"**{now:%H:%M}**\n24-hr", right=True)
 
     st.markdown("### பாட பொருள் நிபுணர் பலகை / SME Panel")
