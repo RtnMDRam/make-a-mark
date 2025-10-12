@@ -1,88 +1,80 @@
 # lib/editor_panel.py
+import re
 import streamlit as st
-import pandas as pd
-from lib.qc_state import get_ss
 
-def _txt(x) -> str:
-    return "" if (x is None or (isinstance(x,float) and pd.isna(x))) else str(x).replace("\r\n","\n").strip()
-
-def _split_opts(v: str):
-    if not v: return ["","","",""]
-    parts = [p.strip() for p in v.replace("A)","|").replace("B)","|").replace("C)","|").replace("D)","|").split("|") if p.strip()]
-    while len(parts)<4: parts.append("")
+def _split_opts(v:str):
+    if not v or not str(v).strip(): return ["","","",""]
+    parts = re.split(r"\s*\|\s*|[\n\r]+|[;•]\s*", str(v).strip())
+    parts = [p for p in parts if p is not None]
+    while len(parts) < 4: parts.append("")
     return parts[:4]
 
-def render_editor():
-    ss = get_ss()
-    row = ss.qc_work.iloc[ss.qc_idx]
-    rid = row["ID"]
+def render_references_and_editor():
+    ss = st.session_state
+    i  = ss.qc_idx
+    row = ss.qc_work.iloc[i]
+    rid = str(row["ID"])
 
-    # ---- Reference cards -------------------------------------------------
-    def card(title, q, op, ans, exp, cls):
-        st.markdown(
-            f"""
-            <div style="border:1px solid #cdb; background:{cls}; padding:10px 12px; border-radius:8px; margin:6px 0;">
-              <span style="font-weight:600; background:#e5e5e5; padding:3px 10px; border-radius:10px;">{title}</span><br>
-              <b>Q:</b> {_txt(q)}<br>
-              <b>Options (A–D):</b> {_txt(op)}<br>
-              <b>Answer:</b> {_txt(ans)}<br>
-              <b>Explanation:</b> {_txt(exp)}
-            </div>
-            """, unsafe_allow_html=True
-        )
+    # --- Reference boxes (read-only) ---
+    def view_block(title, q, op, ans, exp, cls):
+        st.markdown(f"""
+        <div class="box {cls}">
+            <span style="font-weight:700;background:#00000022;padding:4px 10px;border-radius:12px;">{title}</span><br>
+            <b>Q:</b> {q}<br>
+            <b>Options (A–D):</b> {op}<br>
+            <b>Answer:</b> {ans}<br>
+            <b>Explanation:</b> {exp}
+        </div>
+        """, unsafe_allow_html=True)
 
-    en_q, en_op, en_ans, en_exp = [row[c] for c in ("Question (English)","Options (English)","Answer (English)","Explanation (English)")]
-    ta_q, ta_op, ta_ans, ta_exp = [row[c] for c in ("Question (Tamil)","Options (Tamil)","Answer (Tamil)","Explanation (Tamil)")]
+    view_block("English Version / ஆங்கிலம்",
+               row["Question (English)"], row["Options (English)"],
+               row["Answer (English)"], row["Explanation (English)"], "en")
+    view_block("Tamil Original / தமிழ் மூலப் பதிப்பு",
+               row["Question (Tamil)"], row["Options (Tamil)"],
+               row["Answer (Tamil)"], row["Explanation (Tamil)"], "ta")
 
-    card("English Version / ஆங்கிலம்", en_q, en_op, en_ans, en_exp, "#eef3ff")
-    card("Tamil Original / தமிழ் மூலப் பதிப்பு", ta_q, ta_op, ta_ans, ta_exp, "#eff8e8")
+    # --- SME Edit Console: small subtitle ---
+    st.markdown('<div class="sme-sub">SME Edit Console / ஆசிரியர் திருத்தம்</div>', unsafe_allow_html=True)
 
-    # ---- Compact SME editor ---------------------------------------------
-    st.markdown('<div class="sme-title">SME Edit Console / ஆசிரியர் திருத்தம்</div>', unsafe_allow_html=True)
+    # Values into Session for this rid (so Save buttons in top strip can read them)
+    A,B,C,D = _split_opts(row["Options (Tamil)"])
+    defaults = {
+        f"q_ta_{rid}"  : row["Question (Tamil)"],
+        f"a_ta_{rid}"  : A,
+        f"b_ta_{rid}"  : B,
+        f"c_ta_{rid}"  : C,
+        f"d_ta_{rid}"  : D,
+        f"ans_ta_{rid}": row["Answer (Tamil)"],
+        f"exp_ta_{rid}": row["Explanation (Tamil)"],
+    }
+    for k,v in defaults.items():
+        if k not in ss: ss[k]=v
 
-    rk = f"{ss.qc_idx}"
-    q = st.text_area("", value=_txt(ta_q), key=f"q_in_{rk}", height=72, label_visibility="collapsed")
+    # Question (keep ≈2 lines)
+    st.text_area(" ", key=f"q_ta_{rid}", value=ss[f"q_ta_{rid}"], height=64, label_visibility="collapsed")
 
-    A,B,C,D = _split_opts(_txt(ta_op))
-    cA, cB = st.columns(2)
-    with cA:
-        A = st.text_input(" ", value=A, key=f"a_in_{rk}", label_visibility="collapsed", placeholder="A")
-    with cB:
-        B = st.text_input(" ", value=B, key=f"b_in_{rk}", label_visibility="collapsed", placeholder="B")
+    # Options grid 2x2 (A,B on first row; C,D on second) — very compact
+    st.markdown('<div class="optrow">', unsafe_allow_html=True)
+    r1c1, r1c2 = st.columns(2)
+    with r1c1:
+        st.text_input("A", key=f"a_ta_{rid}", value=ss[f"a_ta_{rid}"], label_visibility="visible")
+    with r1c2:
+        st.text_input("B", key=f"b_ta_{rid}", value=ss[f"b_ta_{rid}"], label_visibility="visible")
+    r2c1, r2c2 = st.columns(2)
+    with r2c1:
+        st.text_input("C", key=f"c_ta_{rid}", value=ss[f"c_ta_{rid}"], label_visibility="visible")
+    with r2c2:
+        st.text_input("D", key=f"d_ta_{rid}", value=ss[f"d_ta_{rid}"], label_visibility="visible")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    cC, cD = st.columns(2)
-    with cC:
-        C = st.text_input(" ", value=C, key=f"c_in_{rk}", label_visibility="collapsed", placeholder="C")
-    with cD:
-        D = st.text_input(" ", value=D, key=f"d_in_{rk}", label_visibility="collapsed", placeholder="D")
+    # Glossary + Answer row (inline, minimal)
+    g1, g2 = st.columns([1,1])
+    with g1:
+        st.text_input("சொல் அகராதி / Glossary", placeholder="(Type the word)", key=f"gloss_{rid}")
+        st.button("Go", key=f"go_{rid}", use_container_width=True)
+    with g2:
+        st.text_input("பதில் / Answer", key=f"ans_ta_{rid}", value=ss[f"ans_ta_{rid}"], label_visibility="visible")
 
-    gL, gR = st.columns([2,2])
-    with gL:
-        st.caption("சொல் அகராதி / Glossary")
-        gq = st.text_input("", key="gloss_q", label_visibility="collapsed", placeholder="(Type the word)")
-    with gR:
-        st.caption("பதில் / Answer")
-        ans = st.text_input(" ", value=_txt(ta_ans), key=f"ans_in_{rk}", label_visibility="collapsed", placeholder="A:")
-
-    st.caption("விளக்கங்கள் :")
-    exp = st.text_area("", value=_txt(ta_exp), key=f"exp_in_{rk}", height=140, label_visibility="collapsed")
-
-    # ---- Persist into merged Tamil column (QC_TA) -----------------------
-    merged = []
-    if _txt(q): merged.append(f"Q: {q}")
-    opts = [A,B,C,D]
-    if any(_txt(x) for x in opts):
-        merged.append("Options (A–D): " + " | ".join([f"{lbl}) {opts[i]}" for i,lbl in enumerate(["A","B","C","D"])]))
-    if _txt(ans): merged.append(f"Answer: {ans}")
-    if _txt(exp): merged.append(f"Explanation: {exp}")
-    ss.qc_work.at[ss.qc_idx, "QC_TA"] = "\n".join(merged)
-
-    # ---- React to top buttons (set by top_strip) ------------------------
-    if st.session_state.pop("_just_save", False):
-        pass  # already saved into qc_work via QC_TA above
-    if st.session_state.pop("_mark_complete", False):
-        pass  # no-op here; you can add tagging if needed
-    if st.session_state.pop("_save_and_next", False):
-        if ss.qc_idx < len(ss.qc_work) - 1:
-            ss.qc_idx += 1
-            st.rerun()
+    # Explanation (taller)
+    st.text_area("விளக்கங்கள் :", key=f"exp_ta_{rid}", value=ss[f"exp_ta_{rid}"], height=180)
