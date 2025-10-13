@@ -1,81 +1,76 @@
-# pages/00_SME_Master.py - Advanced SME Master Editor with Error Guard and Dropdowns
-
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
 st.set_page_config(page_title="SME Master", page_icon="📝", layout="wide")
 
-salutations = ["Tr.", "Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Rev.", "Other"]
+prefixes = ["Tr.", "Ta."]
+salutations = ["Mr.", "Mrs.", "Miss", "Ms.", "Dr.", "Prof.", "Lect.", "Rev.", "Other"]
 subjects = sorted([
-    "Biology",
-    "Chemistry",
-    "English",
-    "Maths",
-    "Physics",
-    "Tamil",
-    "Others"
+    "Biology", "Chemistry", "English", "Maths", "Physics", "Tamil", "Others"
 ])
+genders = ["Male", "Female", "Other", "Prefer not to say"]
 
 column_order = [
-    "Subject",    # Dropdown
-    "Salutation", # Default Tr. dropdown
-    "SME Name",   # (auto-prefixed)
-    "Initial",    # Optional
-    "Email",
-    "WhatsApp",
-    "Address",    # Optional
-    "Place",
-    "Pincode",
-    "Taluk",
-    "District",
-    "Block ID",
-    "Block Name"
+    "Prefix", "Salutation", "SME Name", "Initial", "Email", "WhatsApp",
+    "Subject 1", "Subject 2", "Subject 3", "Date of Birth", "Gender", "Photo",
+    "Address", "Place", "Pincode", "Taluk", "District", "Block ID", "Block Name",
+    "Education", "Experience"
 ]
 
 if "sme_df" not in st.session_state:
     st.session_state.sme_df = pd.DataFrame(columns=column_order)
 
-st.title("📝 SME Master Detailed Editor")
-st.caption(
-    "Subject dropdown first, then salutation with default 'Tr.'. SME Name auto-prefixed if missing. "
-    "Add initials, address, and other details. Download only when at least one SME is entered."
-)
+st.title("📝 SME Master – Flexible Entry (Demo/Trial)")
 
-edited_df = st.data_editor(
-    st.session_state.sme_df,
-    column_order=column_order,
-    num_rows="dynamic",
-    use_container_width=True,
-    column_config={
-        "Salutation": st.column_config.SelectboxColumn("Salutation", options=salutations, required=True),
-        "Subject": st.column_config.SelectboxColumn("Subject", options=subjects, required=True),
-        "Address": st.column_config.TextColumn("Address (optional)", required=False),
-        "SME Name": st.column_config.TextColumn("Name"),
-        "Initial": st.column_config.TextColumn("Initial (optional)", required=False),
-        "Email": st.column_config.TextColumn("Email"),
-        "WhatsApp": st.column_config.TextColumn("WhatsApp"),
-        "Place": st.column_config.TextColumn("Place"),
-        "Pincode": st.column_config.TextColumn("Pincode"),
-        "Taluk": st.column_config.TextColumn("Taluk"),
-        "District": st.column_config.TextColumn("District"),
-        "Block ID": st.column_config.TextColumn("Block ID"),
-        "Block Name": st.column_config.TextColumn("Block Name"),
-    },
-    key="sme_editor"
-)
+with st.form("add_sme_form", clear_on_submit=True):
+    prefix = st.selectbox("Prefix (required)", prefixes, index=0)
+    salu = st.selectbox("Salutation", salutations, index=0)
+    name = st.text_input("Name (required)")
+    initial = st.text_input("Initial")
+    email = st.text_input("Email (required)")
+    whatsapp = st.text_input("WhatsApp (required)")
+    subj1 = st.selectbox("Subject 1 (required)", subjects)
+    subj2 = st.selectbox("Subject 2", [""] + subjects)
+    subj3 = st.selectbox("Subject 3", [""] + subjects)
+    dob = st.date_input("Date of Birth", value=None)
+    gender = st.selectbox("Gender", [""] + genders)
+    photo = st.file_uploader("Photo (optional, jpg/png/jpeg)", type=["jpg", "jpeg", "png"])
+    # All address/contact fields optional
+    address = st.text_input("Address")
+    place = st.text_input("Place")
+    pincode = st.text_input("Pincode")
+    taluk = st.text_input("Taluk")
+    district = st.text_input("District")
+    block_id = st.text_input("Block ID")
+    block_name = st.text_input("Block Name")
+    # Dynamic education history (simple as text for now, can expand)
+    edu = st.text_area("Education/Qualifications (freeform or summarized for demo)")
+    exp = st.text_area("Employment/Experience (freeform for demo, dynamic detailed table can be added next)")
+    submitted = st.form_submit_button("Add SME to Table")
 
-# Ensure salutation at start of SME Name if missing
-if not edited_df.empty:
-    for idx, row in edited_df.iterrows():
-        sal = row.get("Salutation", "Tr.")
-        name = str(row.get("SME Name", "")).strip()
-        if name and not name.startswith(sal):
-            edited_df.at[idx, "SME Name"] = f"{sal} {name}"
-
-if not edited_df.equals(st.session_state.sme_df):
-    st.session_state.sme_df = edited_df
+    if submitted:
+        # Minimal required: subject1, name, whatsapp, email, prefix!
+        if not (name.strip() and email.strip() and whatsapp.strip() and subj1 and prefix):
+            st.error("Please fill in all required fields: prefix, name, whatsapp, email, and at least primary subject.")
+        else:
+            sme_fullname = f"{prefix} {salu} {name.strip()}"
+            photo_name = photo.name if photo else ""
+            row_values = [
+                prefix, salu, sme_fullname, initial, email, whatsapp,
+                subj1, subj2, subj3, dob.strftime("%Y-%m-%d") if dob else "", gender, photo_name,
+                address, place, pincode, taluk, district, block_id, block_name,
+                edu, exp
+            ]
+            new_row = dict(zip(column_order, row_values))
+            st.session_state.sme_df = pd.concat([
+                st.session_state.sme_df, pd.DataFrame([new_row])
+            ], ignore_index=True)
+            st.success(f"SME {sme_fullname} added.")
 
 st.markdown("---")
+st.subheader("Current SME Table (Edit inline/deletion in next update)")
+st.dataframe(st.session_state.sme_df, use_container_width=True)
 
 if not st.session_state.sme_df.empty:
     excel_bytes = st.session_state.sme_df.to_excel(index=False, engine="openpyxl")
@@ -93,8 +88,6 @@ if not st.session_state.sme_df.empty:
         mime="text/csv"
     )
 else:
-    st.warning("Please add at least one SME row before downloading Excel/CSV.")
+    st.warning("Please add at least one SME for download/export.")
 
-st.info(
-    "Enter SME details row-wise. SME names auto-begin with your chosen salutation. Use dropdowns to prevent errors in subject or salutation."
-)
+st.info("Only essential fields are mandatory in this trial. More dynamic sections (employment, education, table edits/deletes) can be done in the next phase.")
