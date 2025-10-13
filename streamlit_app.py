@@ -1,4 +1,4 @@
-import streamlit as st
+ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
@@ -13,7 +13,6 @@ hide_streamlit_style = """
     """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# --- Tamil calendar and pastel setup ---
 def tamil_month_day(dt):
     tamil_months = [
         "சித்திரை", "வைகாசி", "ஆணி", "ஆடி", "ஆவணி", "புரட்டாசி",
@@ -34,8 +33,18 @@ OFF_WHITE = "#FFFDFB"
 
 st.set_page_config(page_title="SME Panel", layout="wide")
 
-# --- Load bilingual Excel and SME edits ---
-df = pd.read_excel("bl_bio_bot_unit_4_chap_9_the_tissues_qb.xlsx")
+# === File upload or sample dataset ===
+uploaded_file = st.file_uploader("🔼 Upload bilingual Excel (.xlsx)", type=["xlsx"])
+if uploaded_file is not None:
+    df = pd.read_excel(uploaded_file)
+    st.success("File loaded! Edit questions below.")
+else:
+    st.info("No file uploaded! Using sample questions. Upload a bilingual Excel file anytime.")
+    df = pd.DataFrame({
+        "question": ["Sample: What is a cell?", "Sample: Explain tissue organization."],
+        "கேள்வி": ["உதாரணம்: ஒரு செல் என்றால் என்ன?", "உதாரணம்: திசு அமைப்பு விளக்குக."]
+    })
+
 if 'edited_tamil' not in st.session_state:
     st.session_state.edited_tamil = list(df["கேள்வி"])
 if 'row_index' not in st.session_state:
@@ -49,7 +58,6 @@ tamil_date = tamil_month_day(now)
 eng_date = now.strftime("“%Y %b %d”")
 time_24 = now.strftime("“%H:%M”")
 
-# --- Top Bar/Buttons: Touch-optimized, compact ---
 st.markdown(
     f"""
     <div style="background:{PRIMARY_HEADER};padding:14px 12px 6px 12px;border-radius:13px 13px 0 0;box-shadow:0 3px 16px #e0e8ef44;">
@@ -72,7 +80,6 @@ st.markdown(
 
 st.markdown(f"<div style='background:{PASTEL_BG}; border-radius:0 0 18px 18px; padding:18px 24px;'>", unsafe_allow_html=True)
 
-# ==== Editable SME Tamil Area ====
 st.markdown(f"<div style='background:{LIGHT_BLUE};padding:10px;border-radius:13px;margin-bottom:15px;'>", unsafe_allow_html=True)
 st.markdown("<h4 style='color:#6A4C93;font-weight:bold;'>பொருள் தரம் தேர்வு இடம் — SME Editable</h4>", unsafe_allow_html=True)
 
@@ -112,7 +119,6 @@ st.markdown(
 explanation = st.text_area("விளக்கங்கள் :", value="", height=45)
 st.markdown("</div>", unsafe_allow_html=True)  # End SME Edit Box
 
-# === Reference Panels: English (Top), Tamil (Bottom) ===
 st.markdown(
     f"<div style='border-radius:13px;background:{OFF_WHITE};margin:0 0 20px 0;padding:10px 14px 13px 14px;box-shadow:0 3px 10px #e2e6f399;'>", unsafe_allow_html=True
 )
@@ -130,7 +136,6 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 st.markdown("</div></div>", unsafe_allow_html=True)
 
-# ==== Navigation Buttons ====
 col1, col2 = st.columns(2)
 with col1:
     if row_idx > 0:
@@ -141,10 +146,10 @@ with col2:
         if st.button("Next"):
             st.session_state.row_index += 1
 
-# ===== Final file export =====
 if st.button("Finish"):
     df["கேள்வி"] = st.session_state.edited_tamil
     df.to_excel("SME_Reviewed_bilingual.xlsx", index=False)
     st.success("All edits saved locally as SME_Reviewed_bilingual.xlsx.")
 
-st.info("All displayed fields and color blocks are touch-optimized for iPad. Buttons and backgrounds use harmonious pastels, and cultural Tamil date/month logic is preserved.")
+st.info("All displayed fields and color blocks are touch-optimized for iPad. You can always upload your Excel file or work with sample questions.")
+
