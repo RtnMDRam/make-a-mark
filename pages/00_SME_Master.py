@@ -1,163 +1,98 @@
-# pages/00_SME_Master.py
-import os
-import re
-import io
-import pandas as pd
+# pages/00_SME_Master.py - Advanced SME Master Editor with Custom Logic
+
 import streamlit as st
+import pandas as pd
 
-st.set_page_config(page_title="SME Master", page_icon="🧑‍🏫", layout="wide")
-st.title("🧑‍🏫 SME Master")
-st.caption("Maintain the master list of Subject Matter Experts (subject, location, WhatsApp, etc.).")
+st.set_page_config(page_title="SME Master", page_icon="📝", layout="wide")
 
-# ---------- storage ----------
-DATA_DIR = "data"
-MASTER_PATH = os.path.join(DATA_DIR, "sme_master.csv")
-os.makedirs(DATA_DIR, exist_ok=True)
+# Allowed salutations and subjects
+salutations = ["Tr.", "Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Rev.", "Other"]
+subjects = sorted([
+    "Biology",
+    "Chemistry",
+    "English",
+    "Maths",
+    "Physics",
+    "Tamil",
+    "Others"
+])
 
-# NOTE: Added new column "Middle" (for middle/initial)
-COLUMNS = [
-    "Prefix", "Salutation", "Name", "Middle", "Email", "Subject", "Status",
-    "District", "Taluk", "Place", "Pin", "WhatsApp"
+column_order = [
+    "Subject",    # For easy selection first
+    "Salutation", # Dropdown with default "Tr."
+    "SME Name",   # Main name, with/without initials - will auto-prepend prefix for new rows
+    "Initial",    # Middle/last name or initial, optional
+    "Email",
+    "WhatsApp",
+    "Address",    # Optional (can leave blank)
+    "Place",
+    "Pincode",
+    "Taluk",
+    "District",
+    "Block ID",
+    "Block Name"
 ]
-SUBJECTS = sorted(["Biology", "Chemistry", "English", "Maths", "Physics", "Tamil", "Others"])
-SALUTATIONS = sorted(["Mr.", "Ms.", "Mrs.", "Dr.", "Prof."])
-PREFIXES = ["Tr.", "Sr.", "Fr.", "Er.", ""]  # put your common teaching prefixes first
-STATUSES = ["Active", "Inactive"]
 
-def load_master() -> pd.DataFrame:
-    if os.path.exists(MASTER_PATH):
-        df = pd.read_csv(MASTER_PATH)
-        # guarantee all columns present (backwards-compatible)
-        for c in COLUMNS:
-            if c not in df.columns:
-                df[c] = ""
-        return df[COLUMNS]
-    return pd.DataFrame(columns=COLUMNS)
+# Initialize
+if "sme_df" not in st.session_state:
+    # Set up an empty DataFrame with the correct columns
+    st.session_state.sme_df = pd.DataFrame(columns=column_order)
 
-def save_master(df: pd.DataFrame):
-    df[COLUMNS].to_csv(MASTER_PATH, index=False, encoding="utf-8-sig")
+st.title("📝 SME Master Detailed Editor")
+st.caption("All SME names default to 'Tr.' and salutations. You can add initials/middle names. Most address fields are optional.")
 
-def clean_digits(s: str, max_len=15) -> str:
-    return re.sub(r"\D", "", s or "")[:max_len]
+# SME table editor
+edited_df = st.data_editor(
+    st.session_state.sme_df,
+    column_order=column_order,
+    num_rows="dynamic",
+    use_container_width=True,
+    column_config={
+        "Salutation": st.column_config.SelectboxColumn("Salutation", options=salutations, required=True),
+        "Subject": st.column_config.SelectboxColumn("Subject", options=subjects, required=True),
+        "Address": st.column_config.TextColumn("Address (optional)", required=False),
+        "SME Name": st.column_config.TextColumn("Name"),
+        "Initial": st.column_config.TextColumn("Initial (optional)", required=False),
+        "Email": st.column_config.TextColumn("Email"),
+        "WhatsApp": st.column_config.TextColumn("WhatsApp"),
+        "Place": st.column_config.TextColumn("Place"),
+        "Pincode": st.column_config.TextColumn("Pincode"),
+        "Taluk": st.column_config.TextColumn("Taluk"),
+        "District": st.column_config.TextColumn("District"),
+        "Block ID": st.column_config.TextColumn("Block ID"),
+        "Block Name": st.column_config.TextColumn("Block Name"),
+    },
+    key="sme_editor"
+)
 
-# ---------- Add / Update ----------
-st.subheader("➕ Add / Update SME")
+# Force 'Tr.' or allowed salutation at start of every SME Name, if missing
+if not edited_df.empty:
+    for idx, row in edited_df.iterrows():
+        sal = row.get("Salutation", "Tr.")
+        if sal and not str(row["SME Name"]).startswith(sal):
+            edited_df.at[idx, "SME Name"] = f"{sal} {row['SME Name']}".strip()
 
-with st.form("sme_form", clear_on_submit=True):
-    # 3 even columns; address order: District -> Taluk -> Place -> Pin
-    c1, c2, c3 = st.columns(3)
+if not edited_df.equals(st.session_state.sme_df):
+    st.session_state.sme_df = edited_df
 
-    with c1:
-        prefix = st.selectbox("Prefix", PREFIXES, index=0, help="e.g., Tr. (Teacher)")
-        sal = st.selectbox("Salutation", SALUTATIONS, index=0)
-        name = st.text_input("Name*")
-        middle = st.text_input("Middle / Initial", placeholder="Optional (e.g., K., R., Ann)")
+st.markdown("---")
 
-    with c2:
-        email = st.text_input("Email*")
-        subject = st.selectbox("Subject*", SUBJECTS, index=SUBJECTS.index("Tamil") if "Tamil" in SUBJECTS else 0)
-        status = st.selectbox("Status*", STATUSES, index=0)
-        district = st.text_input("District*")
+excel_bytes = st.session_state.sme_df.to_excel(index=False, engine="openpyxl")
+st.download_button(
+    "⬇️ Download SME Master as Excel",
+    data=excel_bytes,
+    file_name="sme_master.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+csv_bytes = st.session_state.sme_df.to_csv(index=False).encode("utf-8-sig")
+st.download_button(
+    "⬇️ Download SME Master as CSV",
+    data=csv_bytes,
+    file_name="sme_master.csv",
+    mime="text/csv"
+)
 
-    with c3:
-        taluk = st.text_input("Taluk*")
-        place = st.text_input("Place*")
-        pin = st.text_input("Pin code", help="Digits only (6)")
-        wa = st.text_input("WhatsApp (digits only)")
-
-    submitted = st.form_submit_button("Save SME")
-
-if submitted:
-    if not name.strip() or not email.strip():
-        st.error("Please fill **Name** and **Email**.")
-    else:
-        df = load_master()
-        row = {
-            "Prefix":   prefix.strip(),
-            "Salutation": sal.strip(),
-            "Name":     name.strip(),
-            "Middle":   middle.strip(),  # NEW
-            "Email":    email.strip(),
-            "Subject":  subject.strip(),
-            "Status":   status.strip(),
-            "District": district.strip().title(),
-            "Taluk":    taluk.strip().title(),
-            "Place":    place.strip().title(),
-            "Pin":      clean_digits(pin, 6),
-            "WhatsApp": clean_digits(wa)
-        }
-        # upsert by Email
-        if (df["Email"] == row["Email"]).any():
-            df.loc[df["Email"] == row["Email"], :] = row
-            st.success(f"Updated SME: {row['Name']}{(' ' + row['Middle']) if row['Middle'] else ''}")
-        else:
-            df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
-            st.success(f"Added SME: {row['Name']}{(' ' + row['Middle']) if row['Middle'] else ''}")
-        save_master(df)
-
-# ---------- Filter & Table ----------
-st.markdown("### 🔎 Filter")
-f1, f2, f3, f4 = st.columns([1, 1, 1, 1])
-with f1:
-    f_subject = st.multiselect("Subject", SUBJECTS)
-with f2:
-    f_district = st.text_input("District contains…")
-with f3:
-    f_status = st.multiselect("Status", STATUSES, default=["Active"])
-with f4:
-    f_pin = st.text_input("Pin code contains…")
-
-df_view = load_master().copy()
-
-if f_subject:
-    df_view = df_view[df_view["Subject"].isin(f_subject)]
-if f_status:
-    df_view = df_view[df_view["Status"].isin(f_status)]
-if f_district:
-    df_view = df_view[df_view["District"].str.contains(f_district, case=False, na=False)]
-if f_pin:
-    df_view = df_view[df_view["Pin"].astype(str).str.contains(f_pin, na=False)]
-
-st.markdown("### 📋 SME Master Table")
-
-def _status_dot(s):
-    color = "green" if s == "Active" else "red"
-    return (
-        "<span style='display:inline-flex;align-items:center;gap:.4rem'>"
-        f"<span style='width:.6rem;height:.6rem;border-radius:50%;background:{color};display:inline-block'></span>{s}"
-        "</span>"
-    )
-
-if not df_view.empty:
-    show = df_view.copy()
-    show["Status"] = show["Status"].apply(_status_dot)
-
-    # Arrange table columns nicely (show “Middle” next to Name)
-    ordered = [
-        "Prefix", "Salutation", "Name", "Middle", "Email", "Subject", "Status",
-        "District", "Taluk", "Place", "Pin", "WhatsApp"
-    ]
-    show = show[ordered]
-
-    st.write(show.to_html(escape=False, index=False), unsafe_allow_html=True)
-else:
-    st.info("No SMEs to show yet.")
-
-# ---------- Downloads ----------
-c_dl1, c_dl2 = st.columns(2)
-with c_dl1:
-    st.download_button(
-        "⬇️ Download Master CSV",
-        data=load_master().to_csv(index=False, encoding="utf-8-sig"),
-        file_name="sme_master.csv",
-        mime="text/csv",
-    )
-with c_dl2:
-    buf = io.BytesIO()
-    load_master().to_excel(buf, index=False)
-    st.download_button(
-        "⬇️ Download Master Excel",
-        data=buf.getvalue(),
-        file_name="sme_master.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+st.info(
+    "Enter new SME rows with all required columns. SME name will always begin with 'Tr.' or your chosen salutation. "
+    "Most address fields are optional for convenience. Use dropdowns for subject and salutation."
+)
