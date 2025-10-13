@@ -1,7 +1,8 @@
 import streamlit as st
+import pandas as pd
 from datetime import datetime
 
-# --- Hide Streamlit sidebar and menu (copy/paste this very first) ---
+# --- Hide Streamlit sidebar and menu ---
 hide_streamlit_style = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -12,7 +13,7 @@ hide_streamlit_style = """
     """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# --- Tamil calendar and color setup ---
+# --- Tamil calendar and pastel setup ---
 def tamil_month_day(dt):
     tamil_months = [
         "சித்திரை", "வைகாசி", "ஆணி", "ஆடி", "ஆவணி", "புரட்டாசி",
@@ -33,30 +34,34 @@ OFF_WHITE = "#FFFDFB"
 
 st.set_page_config(page_title="SME Panel", layout="wide")
 
+# --- Load bilingual Excel and SME edits ---
+df = pd.read_excel("bl_bio_bot_unit_4_chap_9_the_tissues_qb.xlsx")
+if 'edited_tamil' not in st.session_state:
+    st.session_state.edited_tamil = list(df["கேள்வி"])
+if 'row_index' not in st.session_state:
+    st.session_state.row_index = 0
+
+row_idx = st.session_state.row_index
+total_questions = len(df)
+
 now = datetime.now()
-tamil_date = tamil_month_day(now)      # Tamil month and date in quotes
-eng_date = now.strftime("“%Y %b %d”") # English date in quotes
-time_24 = now.strftime("“%H:%M”")     # Time in quotes
+tamil_date = tamil_month_day(now)
+eng_date = now.strftime("“%Y %b %d”")
+time_24 = now.strftime("“%H:%M”")
 
-TOTAL_QUESTIONS = 100
-answered = 25
-remaining = TOTAL_QUESTIONS - answered
-row_id = 38
-
-# --- Top Bar/Buttons (button area improved for spacing) ---
+# --- Top Bar/Buttons: Touch-optimized, compact ---
 st.markdown(
     f"""
-    <div style="background:{PRIMARY_HEADER};padding:16px 12px 8px 12px;border-radius:15px 15px 0px 0px;box-shadow:0 3px 16px #e0e8ef44;">
-        <div style="display:flex;flex-wrap:wrap;flex-direction:row;align-items:center;justify-content:space-between;gap:6px;">
-            <div style="font-size:1.1rem;font-weight:700;color:#fff;">
+    <div style="background:{PRIMARY_HEADER};padding:14px 12px 6px 12px;border-radius:13px 13px 0 0;box-shadow:0 3px 16px #e0e8ef44;">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px;">
+            <div style="font-size:1.05rem;font-weight:700;color:#fff;">
                 {tamil_date} / {eng_date} &nbsp;&nbsp;{time_24}
             </div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;">
-                <button style="background:{MINT};color:#414062;border:none;padding:6px 18px;font-weight:700;border-radius:7px;">Hi! Glossary</button>
-                <button style="background:{YELLOW};color:#513c00;border:none;padding:6px 18px;font-weight:700;border-radius:7px;">Save & Cont..</button>
-                <span style="background:{OFF_WHITE};color:#444;padding:7px 13px 7px 13px;border-radius:5px 0 0 5px;border:1px solid {SOFT_LAVENDER};">25</span>
-                <span style="background:{MILD_PURPLE};color:#fff;font-weight:bold;padding:7px 13px;">ID 38</span>
-                <span style="background:{OFF_WHITE};color:#444;padding:7px 13px 7px 13px;border-radius:0 5px 5px 0;border:1px solid {SOFT_LAVENDER};">75</span>
+            <div style="display:flex;gap:7px;">
+                <button style="background:{MINT};color:#414062;border:none;padding:6px 18px;font-weight:700;border-radius:7px;">Glossary</button>
+                <span style="background:{OFF_WHITE};color:#444;padding:7px 13px 7px 13px;border-radius:5px 0 0 5px;border:1px solid {SOFT_LAVENDER};">{row_idx+1}</span>
+                <span style="background:{MILD_PURPLE};color:#fff;font-weight:bold;padding:7px 13px;">ID {row_idx+1}</span>
+                <span style="background:{OFF_WHITE};color:#444;padding:7px 13px 7px 13px;border-radius:0 5px 5px 0;border:1px solid {SOFT_LAVENDER};">{total_questions-row_idx}</span>
                 <button style="background:{SOFT_ACCENT};color:#692d67;border:none;padding:6px 18px;font-weight:700;border-radius:7px;">Save & Next</button>
                 <button style="background:{SOFT_LAVENDER};color:#444;padding:6px 18px;font-weight:700;border:none;border-radius:7px;">Save File</button>
             </div>
@@ -65,22 +70,24 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-st.markdown(
-    f"<div style='background:{PASTEL_BG}; border-radius:0 0 18px 18px; padding:18px 24px;'>", unsafe_allow_html=True
-)
+st.markdown(f"<div style='background:{PASTEL_BG}; border-radius:0 0 18px 18px; padding:18px 24px;'>", unsafe_allow_html=True)
 
-# === Editable SME Tamil Area ===
+# ==== Editable SME Tamil Area ====
 st.markdown(f"<div style='background:{LIGHT_BLUE};padding:10px;border-radius:13px;margin-bottom:15px;'>", unsafe_allow_html=True)
-st.markdown("<h4 style='color:#6A4C93;font-weight:bold;'>Subject Matter Expert Space — Editable</h4>", unsafe_allow_html=True)
+st.markdown("<h4 style='color:#6A4C93;font-weight:bold;'>பொருள் தரம் தேர்வு இடம் — SME Editable</h4>", unsafe_allow_html=True)
 
-q_text = st.text_area("கேள்வி :", height=65)
+edited_tamil = st.text_area("கேள்வி :", value=st.session_state.edited_tamil[row_idx], height=65)
+if st.button("Save Edit"):
+    st.session_state.edited_tamil[row_idx] = edited_tamil
+    st.success("Saved edit for this question.")
+
 cols_opt = st.columns(2)
 with cols_opt[0]:
-    opt_a = st.text_input("தேர்வு A (Option A)", key="opt_a")
-    opt_b = st.text_input("தேர்வு B (Option B)", key="opt_b")
+    opt_a = st.text_input("தேர்வு A (Option A)", value="", key="opt_a")
+    opt_b = st.text_input("தேர்வு B (Option B)", value="", key="opt_b")
 with cols_opt[1]:
-    opt_c = st.text_input("தேர்வு C (Option C)", key="opt_c")
-    opt_d = st.text_input("தேர்வு D (Option D)", key="opt_d")
+    opt_c = st.text_input("தேர்வு C (Option C)", value="", key="opt_c")
+    opt_d = st.text_input("தேர்வு D (Option D)", value="", key="opt_d")
 
 st.markdown(
     f"""
@@ -102,43 +109,43 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-explanation = st.text_area("விளக்கங்கள் :", height=45)
-
+explanation = st.text_area("விளக்கங்கள் :", value="", height=45)
 st.markdown("</div>", unsafe_allow_html=True)  # End SME Edit Box
 
 # === Reference Panels: English (Top), Tamil (Bottom) ===
 st.markdown(
     f"<div style='border-radius:13px;background:{OFF_WHITE};margin:0 0 20px 0;padding:10px 14px 13px 14px;box-shadow:0 3px 10px #e2e6f399;'>", unsafe_allow_html=True
 )
-st.markdown("""
+st.markdown(f"""
 <b>English (read-only)</b><br>
-<b>Question:</b> Specialized pits called bordered pits are present on the radial walls of<br>
-<b>Options (A–D):</b><br>
-A) Xylem tracheids.<br>
-B) Sieve tubes.<br>
-C) Xylem fibers.<br>
-D) Sieve plates.<br>
-<b>Answer:</b> A) Xylem tracheids.<br>
-<b>Explanation:</b><br>
-Bordered pits are cavities in the lignified cell walls of the xylem. (...)<br>
+<b>Question:</b> {df.loc[row_idx, 'question']}<br>
 """, unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
-
 st.markdown(
     f"<div style='border-radius:13px;background:{OFF_WHITE};margin:0 0 10px 0;padding:10px 14px 13px 14px;'>", unsafe_allow_html=True
 )
-st.markdown("""
+st.markdown(f"""
 <b>தமிழ் — படிக்க மட்டும் — Original</b><br>
-<b>கேள்வி:</b> எல்லைப்பட்ட குடிகள் எனப்படும் சிறப்பு குடிகள் ...<br>
-<b>விருப்பங்கள்:</b><br>
-A) சைலம் மூச்சுக்குழாய்கள்.<br>
-B) குழாய்களை சல்லடை செய்யும்.<br>
-C) சைலம் இழைகள்.<br>
-D) தட்டுகளை சல்லடை செய்யும்.<br>
-<b>பதில்:</b> A) சைலம் மூச்சுக்குழாய்கள்.<br>
-<b>விளக்கம்:</b><br>
-சைலத்தின் லிக்னின்டைக் ...<br>
+<b>கேள்வி:</b> {df.loc[row_idx, 'கேள்வி']}<br>
 """, unsafe_allow_html=True)
 st.markdown("</div></div>", unsafe_allow_html=True)
 
-st.info("All displayed fields and color blocks are fully touch-optimized for iPad use. Buttons, inputs, and backgrounds use harmonious pastels from your chosen theme. Function logic and database integration can follow as your next step.")
+# ==== Navigation Buttons ====
+col1, col2 = st.columns(2)
+with col1:
+    if row_idx > 0:
+        if st.button("Previous"):
+            st.session_state.row_index -= 1
+with col2:
+    if row_idx < len(df) - 1:
+        if st.button("Next"):
+            st.session_state.row_index += 1
+
+# ===== Final file export =====
+if st.button("Finish"):
+    df["கேள்வி"] = st.session_state.edited_tamil
+    df.to_excel("SME_Reviewed_bilingual.xlsx", index=False)
+    st.success("All edits saved locally as SME_Reviewed_bilingual.xlsx.")
+
+st.info("All displayed fields and color blocks are touch-optimized for iPad. Buttons and backgrounds use harmonious pastels, and cultural Tamil date/month logic is preserved.")
+
