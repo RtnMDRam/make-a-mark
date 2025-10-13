@@ -1,11 +1,10 @@
-# pages/00_SME_Master.py - Advanced SME Master Editor with Custom Logic
+# pages/00_SME_Master.py - Advanced SME Master Editor with Error Guard and Dropdowns
 
 import streamlit as st
 import pandas as pd
 
 st.set_page_config(page_title="SME Master", page_icon="📝", layout="wide")
 
-# Allowed salutations and subjects
 salutations = ["Tr.", "Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Rev.", "Other"]
 subjects = sorted([
     "Biology",
@@ -18,13 +17,13 @@ subjects = sorted([
 ])
 
 column_order = [
-    "Subject",    # For easy selection first
-    "Salutation", # Dropdown with default "Tr."
-    "SME Name",   # Main name, with/without initials - will auto-prepend prefix for new rows
-    "Initial",    # Middle/last name or initial, optional
+    "Subject",    # Dropdown
+    "Salutation", # Default Tr. dropdown
+    "SME Name",   # (auto-prefixed)
+    "Initial",    # Optional
     "Email",
     "WhatsApp",
-    "Address",    # Optional (can leave blank)
+    "Address",    # Optional
     "Place",
     "Pincode",
     "Taluk",
@@ -33,15 +32,15 @@ column_order = [
     "Block Name"
 ]
 
-# Initialize
 if "sme_df" not in st.session_state:
-    # Set up an empty DataFrame with the correct columns
     st.session_state.sme_df = pd.DataFrame(columns=column_order)
 
 st.title("📝 SME Master Detailed Editor")
-st.caption("All SME names default to 'Tr.' and salutations. You can add initials/middle names. Most address fields are optional.")
+st.caption(
+    "Subject dropdown first, then salutation with default 'Tr.'. SME Name auto-prefixed if missing. "
+    "Add initials, address, and other details. Download only when at least one SME is entered."
+)
 
-# SME table editor
 edited_df = st.data_editor(
     st.session_state.sme_df,
     column_order=column_order,
@@ -65,34 +64,37 @@ edited_df = st.data_editor(
     key="sme_editor"
 )
 
-# Force 'Tr.' or allowed salutation at start of every SME Name, if missing
+# Ensure salutation at start of SME Name if missing
 if not edited_df.empty:
     for idx, row in edited_df.iterrows():
         sal = row.get("Salutation", "Tr.")
-        if sal and not str(row["SME Name"]).startswith(sal):
-            edited_df.at[idx, "SME Name"] = f"{sal} {row['SME Name']}".strip()
+        name = str(row.get("SME Name", "")).strip()
+        if name and not name.startswith(sal):
+            edited_df.at[idx, "SME Name"] = f"{sal} {name}"
 
 if not edited_df.equals(st.session_state.sme_df):
     st.session_state.sme_df = edited_df
 
 st.markdown("---")
 
-excel_bytes = st.session_state.sme_df.to_excel(index=False, engine="openpyxl")
-st.download_button(
-    "⬇️ Download SME Master as Excel",
-    data=excel_bytes,
-    file_name="sme_master.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
-csv_bytes = st.session_state.sme_df.to_csv(index=False).encode("utf-8-sig")
-st.download_button(
-    "⬇️ Download SME Master as CSV",
-    data=csv_bytes,
-    file_name="sme_master.csv",
-    mime="text/csv"
-)
+if not st.session_state.sme_df.empty:
+    excel_bytes = st.session_state.sme_df.to_excel(index=False, engine="openpyxl")
+    st.download_button(
+        "⬇️ Download SME Master as Excel",
+        data=excel_bytes,
+        file_name="sme_master.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    csv_bytes = st.session_state.sme_df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "⬇️ Download SME Master as CSV",
+        data=csv_bytes,
+        file_name="sme_master.csv",
+        mime="text/csv"
+    )
+else:
+    st.warning("Please add at least one SME row before downloading Excel/CSV.")
 
 st.info(
-    "Enter new SME rows with all required columns. SME name will always begin with 'Tr.' or your chosen salutation. "
-    "Most address fields are optional for convenience. Use dropdowns for subject and salutation."
+    "Enter SME details row-wise. SME names auto-begin with your chosen salutation. Use dropdowns to prevent errors in subject or salutation."
 )
