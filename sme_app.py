@@ -1,55 +1,63 @@
 import streamlit as st
 from datetime import datetime
 
-# --- Tamil calendar simple mapping (real panchangam logic can be plugged in) ---
+# --- Hide Streamlit sidebar and menu (copy/paste this very first) ---
+hide_streamlit_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    [data-testid="stSidebar"] { display: none !important; }
+    </style>
+    """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# --- Tamil calendar and color setup ---
 def tamil_month_day(dt):
     tamil_months = [
         "சித்திரை", "வைகாசி", "ஆணி", "ஆடி", "ஆவணி", "புரட்டாசி",
         "ஐப்பசி", "கார்த்திகை", "மார்கழி", "தை", "மாசி", "பங்குனி"
     ]
-    # Purattasi = 6th month (Sept-Oct)
-    # For demonstration, returns Purattasi + today's day; plug real mapping here!
-    return f"புரட்டாசி {dt.day}"
+    tamil_month = tamil_months[(dt.month-4)%12]
+    return f"“{tamil_month} {dt.day}”"
 
-# --- Colors (from Lucid Lavender + Lazy Sunday Pastels) ---
 PASTEL_BG = "#F9F9FB"
-PRIMARY_HEADER = "#A597F3"       # Cold Lips
-SOFT_ACCENT = "#F9D5FF"          # Sparkling Lavender
-MINT = "#C0DAE5"                 # Breeze
-MILD_PURPLE = "#BCB2DB"          # Melrose
-LIGHT_BLUE = "#D1F1FF"           # Lucid Dreams
-SOFT_LAVENDER = "#C4B5D1"        # Lavender Pillow
-YELLOW = "#F6D9B7"               # Cheddar Corn
+PRIMARY_HEADER = "#A597F3"
+SOFT_ACCENT = "#F9D5FF"
+MINT = "#C0DAE5"
+MILD_PURPLE = "#BCB2DB"
+LIGHT_BLUE = "#D1F1FF"
+SOFT_LAVENDER = "#C4B5D1"
+YELLOW = "#F6D9B7"
 OFF_WHITE = "#FFFDFB"
 
 st.set_page_config(page_title="SME Panel", layout="wide")
 
-# --- Today's Date & Time, top bar logic ---
 now = datetime.now()
-tamil_date = tamil_month_day(now)
-eng_date = now.strftime("%Y %b %d")
-time_24 = now.strftime("%H:%M")
+tamil_date = tamil_month_day(now)      # Tamil month and date in quotes
+eng_date = now.strftime("“%Y %b %d”") # English date in quotes
+time_24 = now.strftime("“%H:%M”")     # Time in quotes
 
-TOTAL_QUESTIONS = 100         # For demonstration; can auto-calc from data
-answered = 25                 # Update dynamically as SME works (demo: 25/100)
+TOTAL_QUESTIONS = 100
+answered = 25
 remaining = TOTAL_QUESTIONS - answered
-row_id = 38                   # Demo: current row
+row_id = 38
 
-# --- Top Navigation Bar ---
+# --- Top Bar/Buttons (button area improved for spacing) ---
 st.markdown(
     f"""
     <div style="background:{PRIMARY_HEADER};padding:16px 12px 8px 12px;border-radius:15px 15px 0px 0px;box-shadow:0 3px 16px #e0e8ef44;">
-        <div style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;">
+        <div style="display:flex;flex-wrap:wrap;flex-direction:row;align-items:center;justify-content:space-between;gap:6px;">
             <div style="font-size:1.1rem;font-weight:700;color:#fff;">
                 {tamil_date} / {eng_date} &nbsp;&nbsp;{time_24}
             </div>
-            <div>
-                <button style="background:{MINT};color:#414062;border:none;padding:6px 18px;font-weight:700;border-radius:7px;margin-right:5px;">Hi! Glossary</button>
-                <button style="background:{YELLOW};color:#513c00;border:none;padding:6px 18px;font-weight:700;border-radius:7px;margin-right:5px;">Save & Cont..</button>
-                <span style="background:{OFF_WHITE};color:#444;padding:7px 13px 7px 13px;border-radius:5px 0 0 5px;border:1px solid {SOFT_LAVENDER};margin-right:-4px;">{answered}</span>
-                <span style="background:{MILD_PURPLE};color:#fff;font-weight:bold;padding:7px 13px;">ID {row_id}</span>
-                <span style="background:{OFF_WHITE};color:#444;padding:7px 13px 7px 13px;border-radius:0 5px 5px 0;border:1px solid {SOFT_LAVENDER};margin-left:-4px;">{remaining}</span>
-                <button style="background:{SOFT_ACCENT};color:#692d67;border:none;padding:6px 18px;font-weight:700;border-radius:7px;margin-right:5px;">Save & Next</button>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                <button style="background:{MINT};color:#414062;border:none;padding:6px 18px;font-weight:700;border-radius:7px;">Hi! Glossary</button>
+                <button style="background:{YELLOW};color:#513c00;border:none;padding:6px 18px;font-weight:700;border-radius:7px;">Save & Cont..</button>
+                <span style="background:{OFF_WHITE};color:#444;padding:7px 13px 7px 13px;border-radius:5px 0 0 5px;border:1px solid {SOFT_LAVENDER};">25</span>
+                <span style="background:{MILD_PURPLE};color:#fff;font-weight:bold;padding:7px 13px;">ID 38</span>
+                <span style="background:{OFF_WHITE};color:#444;padding:7px 13px 7px 13px;border-radius:0 5px 5px 0;border:1px solid {SOFT_LAVENDER};">75</span>
+                <button style="background:{SOFT_ACCENT};color:#692d67;border:none;padding:6px 18px;font-weight:700;border-radius:7px;">Save & Next</button>
                 <button style="background:{SOFT_LAVENDER};color:#444;padding:6px 18px;font-weight:700;border:none;border-radius:7px;">Save File</button>
             </div>
         </div>
@@ -133,7 +141,4 @@ D) தட்டுகளை சல்லடை செய்யும்.<br>
 """, unsafe_allow_html=True)
 st.markdown("</div></div>", unsafe_allow_html=True)
 
-# --- END SME PANEL ---
-
 st.info("All displayed fields and color blocks are fully touch-optimized for iPad use. Buttons, inputs, and backgrounds use harmonious pastels from your chosen theme. Function logic and database integration can follow as your next step.")
-
